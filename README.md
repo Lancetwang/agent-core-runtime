@@ -39,16 +39,16 @@ tests/                  # Runtime-only unit tests
 uv sync
 ```
 
-No model SDK or API key is required by the runtime package.
+The runtime includes an OpenAI-compatible chat adapter. It works with OpenAI-compatible providers such as DeepSeek after you fill in a local `.env`.
 
-For real OpenAI-compatible examples:
+For real model examples:
 
 ```powershell
 uv sync --group examples
 Copy-Item .env.example .env
 ```
 
-Then set `OPENAI_API_KEY` in `.env`. The defaults target DeepSeek:
+Then set `OPENAI_API_KEY` in `.env`. `DEEPSEEK_API_KEY` is also supported. The defaults target DeepSeek:
 
 ```text
 OPENAI_BASE_URL=https://api.deepseek.com
@@ -148,7 +148,7 @@ uv run --group examples python examples/03_custom_tool.py
 uv run --group examples python examples/04_tool_agent.py
 ```
 
-These examples use `.env` locally and keep provider code outside the runtime package. The shared adapter in `examples/_openai_compatible.py` implements the `ChatModel` protocol and wires into `build_tool_agent_flow(...)`.
+These examples use `.env` locally. The built-in `agent_core.build_model_from_env()` helper creates an OpenAI-compatible `ChatModel` and wires into `build_tool_agent_flow(...)`.
 
 ## Runtime Events
 

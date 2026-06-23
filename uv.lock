@@ -11,17 +11,13 @@ resolution-markers = [
 name = "agent-core-runtime"
 version = "0.1.0"
 source = { editable = "." }
-
-[package.dev-dependencies]
-examples = [
+dependencies = [
     { name = "openai" },
     { name = "python-dotenv" },
 ]
 
 [package.metadata]
-
-[package.metadata.requires-dev]
-examples = [
+requires-dist = [
     { name = "openai", specifier = ">=1.88.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
 ]
