@@ -70,9 +70,13 @@ class RuleBasedDemoModel:
         }
 
     def _answer_from_tool_results(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        start = 0
+        for index, message in enumerate(messages):
+            if message["role"] == "assistant" and message.get("tool_calls"):
+                start = index + 1
         results = [
             json.loads(message["content"])
-            for message in messages
+            for message in messages[start:]
             if message["role"] == "tool"
         ]
         lines = []
@@ -113,11 +117,7 @@ def run_turn(
 
     history.append({"role": "user", "content": user_input})
     result = agent.run({"history": history}, trace=trace)
-    history[:] = [
-        message
-        for message in result.payload["history"]
-        if message["role"] in {"user", "assistant"}
-    ]
+    history[:] = result.payload["history"]
     safe_print(result.payload["answer"])
     return True
 
@@ -184,8 +184,9 @@ def _last_user_text(messages: list[dict[str, Any]]) -> str:
 
 
 def safe_print(text: str) -> None:
-    encoding = sys.stdout.encoding or "utf-8"
-    print(text.encode(encoding, errors="replace").decode(encoding))
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    print(text)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,20 @@ uv sync
 
 No model SDK or API key is required by the runtime package.
 
+For real OpenAI-compatible examples:
+
+```powershell
+uv sync --group examples
+Copy-Item .env.example .env
+```
+
+Then set `OPENAI_API_KEY` in `.env`. The defaults target DeepSeek:
+
+```text
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
+```
+
 ## Basic Flow
 
 ```python
@@ -120,6 +134,14 @@ Run the local fake-model tool-loop example:
 ```powershell
 uv run python examples/tool_chatbot.py --demo --trace
 ```
+
+Run a real OpenAI-compatible model example:
+
+```powershell
+uv run --group examples python examples/openai_compatible_tool_chatbot.py --demo --trace
+```
+
+The real example keeps provider code outside the runtime package. It implements the `ChatModel` protocol in the example file and wires it into `build_tool_agent_flow(...)`.
 
 ## Runtime Events
 
