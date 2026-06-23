@@ -26,6 +26,10 @@ src/agent_core/
 examples/
   basic_flow.py         # Minimal action routing
   tool_chatbot.py       # Local fake-model tool loop
+  01_basic_agent.py     # Real model, no tools
+  02_custom_prompt.py   # Real model with a custom system prompt
+  03_custom_tool.py     # Tool decorator and schema generation
+  04_tool_agent.py      # Real model with tool calls
 tests/                  # Runtime-only unit tests
 ```
 
@@ -135,13 +139,16 @@ Run the local fake-model tool-loop example:
 uv run python examples/tool_chatbot.py --demo --trace
 ```
 
-Run a real OpenAI-compatible model example:
+Real OpenAI-compatible examples are ordered from small to complete:
 
 ```powershell
-uv run --group examples python examples/openai_compatible_tool_chatbot.py --demo --trace
+uv run --group examples python examples/01_basic_agent.py
+uv run --group examples python examples/02_custom_prompt.py
+uv run --group examples python examples/03_custom_tool.py
+uv run --group examples python examples/04_tool_agent.py
 ```
 
-The real example keeps provider code outside the runtime package. It implements the `ChatModel` protocol in the example file and wires it into `build_tool_agent_flow(...)`.
+These examples use `.env` locally and keep provider code outside the runtime package. The shared adapter in `examples/_openai_compatible.py` implements the `ChatModel` protocol and wires into `build_tool_agent_flow(...)`.
 
 ## Runtime Events
 
