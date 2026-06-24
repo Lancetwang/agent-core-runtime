@@ -115,6 +115,24 @@ class AgentCorePackageTests(unittest.TestCase):
         self.assertEqual(result.payload["ok"], True)
         self.assertEqual(result.path, ["Agent", "CallableNode"])
 
+    def test_nested_agent_flow_inherits_trace(self) -> None:
+        inner_agent = Agent(
+            Flow(CallableNode(lambda payload: ("done", payload))),
+            action=None,
+        )
+
+        result = Flow(inner_agent).run({}, trace=True)
+
+        self.assertEqual(
+            [(event.event, event.node) for event in result.trace if event.category == "node"],
+            [
+                ("node.start", "Agent"),
+                ("node.start", "CallableNode"),
+                ("node.end", "CallableNode"),
+                ("node.end", "Agent"),
+            ],
+        )
+
     def test_nested_agents_add_each_instruction_once(self) -> None:
         first = Agent(
             Flow(CallableNode(lambda payload: {"seen": ["first"]})),

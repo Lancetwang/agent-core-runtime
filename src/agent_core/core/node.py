@@ -14,6 +14,7 @@ from agent_core.core.trace import (
     TraceEvent,
     TraceOptions,
     TraceRecorder,
+    get_trace_recorder,
     reset_current_trace_recorder,
     set_current_trace_recorder,
 )
@@ -113,9 +114,10 @@ class Flow:
         last_action: Action | None = None
         path: list[str] = []
         run_context = context or RunContext.from_payload(payload)
-        recorder = TraceRecorder(trace)
+        inherited_recorder = get_trace_recorder(payload) if trace is None else None
+        recorder = inherited_recorder or TraceRecorder(trace)
         context_token = set_current_context(run_context)
-        token = set_current_trace_recorder(recorder)
+        token = None if inherited_recorder else set_current_trace_recorder(recorder)
 
         try:
             for step in range(1, max_steps + 1):
@@ -142,6 +144,8 @@ class Flow:
                 run_context.emit("node.start", category="node")
                 last_action, payload = current._exec(payload)
                 next_node = current.successors.get(last_action)
+                recorder.set_context(step=step, node=node_name)
+                run_context.set_execution_context(step=step, node=node_name)
                 recorder.emit(
                     "node.end",
                     category="node",
@@ -157,7 +161,8 @@ class Flow:
                 )
                 current = next_node
         finally:
-            reset_current_trace_recorder(token)
+            if token is not None:
+                reset_current_trace_recorder(token)
             reset_current_context(context_token)
 
         raise FlowError(f"Flow exceeded max_steps={max_steps}.")

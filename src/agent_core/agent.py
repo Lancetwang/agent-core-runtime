@@ -94,7 +94,7 @@ class Agent(Node):
         result = self.flow.run(
             payload,
             max_steps=self.max_steps,
-            trace=False,
+            trace=None,
             context=context,
         )
         return ((result.action or "default") if self.action is None else self.action), result.payload
