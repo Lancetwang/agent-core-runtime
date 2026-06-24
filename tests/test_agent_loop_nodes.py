@@ -121,6 +121,8 @@ class AgentLoopNodeTests(unittest.TestCase):
             [message["role"] for message in result.context.messages],
             ["assistant", "tool", "assistant"],
         )
+        self.assertIn("tool_calls", result.context.messages[0])
+        self.assertNotIn("tool_calls", result.context.messages[-1])
         self.assertEqual(
             [event.type for event in result.context.events if event.category == "tool"],
             ["tool.route", "tool.call", "tool.result", "tool.route"],

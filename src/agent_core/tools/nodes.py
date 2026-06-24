@@ -84,7 +84,6 @@ class ToolCallNode(Node):
                     "tool",
                     result.content,
                     tool_call_id=result.tool_call_id,
-                    is_error=result.is_error,
                 )
 
         return self.next_action, state

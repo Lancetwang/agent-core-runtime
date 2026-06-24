@@ -68,10 +68,12 @@ class ModelNode(Node):
         if self.append_message:
             state.setdefault(self.messages_key, []).append(assistant_message)
             if context is not None:
+                tool_calls = assistant_message.get("tool_calls")
+                extra = {"tool_calls": tool_calls} if tool_calls else {}
                 context.add_message(
                     "assistant",
                     str(assistant_message.get("content", "")),
-                    tool_calls=assistant_message.get("tool_calls", []),
+                    **extra,
                 )
 
         if context is not None:

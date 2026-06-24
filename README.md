@@ -89,7 +89,8 @@ examples/
   01_basic_agent.py     # Pure Node/Flow action routing
   02_custom_prompt.py   # Real model through ModelNode and RunContext
   03_custom_tool.py     # @tool schema generation and ToolExecutor
-  04_tool_agent.py      # Real model + ToolRouterNode + ToolCallNode loop
+  04_tool_agent.py      # Context-first model/tool/model loop
+  05_custom_agent.py    # Application-level custom agent wrapper
   _openai_compatible.py # Shared example helper, not a public API
 tests/                  # Runtime-only unit tests
 ```
@@ -123,7 +124,8 @@ Run them in order:
 uv run python examples/01_basic_agent.py
 uv run python examples/02_custom_prompt.py
 uv run python examples/03_custom_tool.py
-uv run python examples/04_tool_agent.py --trace
+uv run python examples/04_tool_agent.py --events
+uv run python examples/05_custom_agent.py
 ```
 
 The sequence is intentionally small:
@@ -131,7 +133,8 @@ The sequence is intentionally small:
 - `01_basic_agent.py`: no LLM, only `CallableNode`, branch actions, `Flow`, and trace.
 - `02_custom_prompt.py`: a real model call through `ModelNode`, with messages built from payload and events stored in `RunContext`.
 - `03_custom_tool.py`: a Python function becomes a `Tool`, exports OpenAI-compatible schema, and runs through `ToolExecutor`.
-- `04_tool_agent.py`: a complete model-tool-model loop using `build_tool_agent_flow`.
+- `04_tool_agent.py`: a complete model-tool-model loop where conversation messages, live events, metadata, and artifacts live in `RunContext`; payload only carries per-run input.
+- `05_custom_agent.py`: a compact application-level wrapper showing how to create a custom agent from instructions, tools, a flow, and a persistent context.
 
 ## Basic Flow
 

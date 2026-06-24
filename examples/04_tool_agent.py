@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 from typing import Annotated, Literal
 
-from agent_core import Agent, RunContext, build_tool_agent_flow, make_trace_options, tool
+from agent_core import Agent, AgentEvent, RunContext, build_tool_agent_flow, tool
 from _openai_compatible import build_demo_model, safe_print
 
 
@@ -42,55 +41,58 @@ def tell_joke(
     }
 
 
-def build_messages(payload: dict) -> list[dict]:
-    return [{"role": "system", "content": SYSTEM_PROMPT}, *payload.get("history", [])]
+def build_context(*, stream_events: bool = False) -> RunContext:
+    context = RunContext(on_event=print_event if stream_events else None)
+    context.metadata["example"] = "04_tool_agent"
+    context.add_message("system", SYSTEM_PROMPT)
+    return context
 
 
 def build_agent() -> Agent:
     return Agent(
         build_tool_agent_flow(
             model=build_demo_model(),
-            messages=build_messages,
+            messages=None,
             tools=[get_weather, tell_joke],
             chat_kwargs={"temperature": 0.2, "max_tokens": 500, "tool_choice": "auto"},
         )
     )
 
 
-def run_turn(agent: Agent, history: list[dict], user_input: str, *, trace: bool) -> str:
-    history.append({"role": "user", "content": user_input})
-    context = RunContext()
+def run_turn(agent: Agent, context: RunContext, user_input: str) -> str:
+    turn_index = int(context.metadata.get("turn_count", 0)) + 1
+    context.metadata["turn_count"] = turn_index
+    context.add_message("user", user_input)
+
     result = agent.run(
-        {"history": history},
+        {"turn": turn_index},
         context=context,
-        trace=make_trace_options(
-            enabled=trace,
-            include=["node", "model", "tool", "flow"],
-            print_to_console=trace,
-            printer=safe_print,
-        ),
+        trace=False,
         max_steps=12,
     )
-    history[:] = result.payload["history"]
-    return str(result.payload.get("answer", ""))
+    answer = str(result.payload.get("answer", ""))
+    context.set_artifact("last_answer", answer)
+    return answer
 
 
-def run_demo(trace: bool) -> None:
+def run_demo(stream_events: bool) -> None:
     agent = build_agent()
-    history: list[dict] = []
+    context = build_context(stream_events=stream_events)
     questions = [
         "What is the weather in Shanghai?",
         "Compare Shanghai and Tokyo weather, then tell one weather joke.",
     ]
     for question in questions:
         safe_print(f"> {question}")
-        safe_print(run_turn(agent, history, question, trace=trace))
+        safe_print(run_turn(agent, context, question))
+        safe_print(f"context messages: {len(context.messages)}")
+        safe_print(f"context events: {len(context.events)}")
         safe_print()
 
 
-def run_interactive(trace: bool) -> None:
+def run_interactive(stream_events: bool) -> None:
     agent = build_agent()
-    history: list[dict] = []
+    context = build_context(stream_events=stream_events)
     safe_print("agent-core tool agent. Type 'exit' to quit.")
     while True:
         user_input = input("> ").strip()
@@ -98,19 +100,35 @@ def run_interactive(trace: bool) -> None:
             safe_print("bye")
             return
         if user_input:
-            safe_print(run_turn(agent, history, user_input, trace=trace))
+            safe_print(run_turn(agent, context, user_input))
+            safe_print(f"[context] messages={len(context.messages)} events={len(context.events)}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a real OpenAI-compatible tool agent.")
     parser.add_argument("--interactive", action="store_true", help="Start an interactive chat.")
-    parser.add_argument("--trace", action="store_true", help="Print runtime events.")
+    parser.add_argument("--events", action="store_true", help="Stream RunContext events.")
     return parser.parse_args()
+
+
+def print_event(event: AgentEvent) -> None:
+    if event.category not in {"node", "model", "tool", "flow", "artifact"}:
+        return
+    parts = [f"[event:{event.category}]", event.type]
+    if event.step is not None:
+        parts.append(f"step={event.step}")
+    if event.node:
+        parts.append(f"node={event.node}")
+    if event.action:
+        parts.append(f"action={event.action}")
+    if event.data:
+        parts.append(f"data={event.data}")
+    safe_print(" ".join(parts))
 
 
 if __name__ == "__main__":
     args = parse_args()
     if args.interactive:
-        run_interactive(trace=args.trace)
+        run_interactive(stream_events=args.events)
     else:
-        run_demo(trace=args.trace)
+        run_demo(stream_events=args.events)

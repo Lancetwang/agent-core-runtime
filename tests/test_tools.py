@@ -176,6 +176,7 @@ class ToolTests(unittest.TestCase):
         )
         self.assertEqual(result.context.messages[-1]["role"], "tool")
         self.assertEqual(result.context.messages[-1]["tool_call_id"], "call_1")
+        self.assertNotIn("is_error", result.context.messages[-1])
 
 
 if __name__ == "__main__":

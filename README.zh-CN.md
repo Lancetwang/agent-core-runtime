@@ -89,7 +89,8 @@ examples/
   01_basic_agent.py     # 纯 Node/Flow action routing
   02_custom_prompt.py   # 真实模型，展示 ModelNode 和 RunContext
   03_custom_tool.py     # @tool schema 生成和 ToolExecutor
-  04_tool_agent.py      # 真实模型 + ToolRouterNode + ToolCallNode 回路
+  04_tool_agent.py      # Context-first 的 model/tool/model 回路
+  05_custom_agent.py    # 应用层客制化 agent 包装方式
   _openai_compatible.py # 示例共享 helper，不是公开 API
 tests/                  # runtime 单元测试
 ```
@@ -123,7 +124,8 @@ OPENAI_MODEL=deepseek-v4-flash
 uv run python examples/01_basic_agent.py
 uv run python examples/02_custom_prompt.py
 uv run python examples/03_custom_tool.py
-uv run python examples/04_tool_agent.py --trace
+uv run python examples/04_tool_agent.py --events
+uv run python examples/05_custom_agent.py
 ```
 
 这组 case 的顺序是：
@@ -131,7 +133,8 @@ uv run python examples/04_tool_agent.py --trace
 - `01_basic_agent.py`：不需要 LLM，只展示 `CallableNode`、分支 action、`Flow` 和 trace。
 - `02_custom_prompt.py`：通过 `ModelNode` 真实调用模型，messages 从 payload 构建，事件进入 `RunContext`。
 - `03_custom_tool.py`：Python 函数变成 `Tool`，导出 OpenAI-compatible schema，并通过 `ToolExecutor` 执行。
-- `04_tool_agent.py`：使用 `build_tool_agent_flow` 搭出完整的 model-tool-model 回路。
+- `04_tool_agent.py`：完整的 model-tool-model 回路，但 messages、实时 events、metadata 和 artifacts 都放在 `RunContext`，payload 只承载本次运行的小输入。
+- `05_custom_agent.py`：展示如何把 instructions、tools、flow 和持久化 context 包装成自己的客制化 agent。
 
 ## 基础 Flow
 
