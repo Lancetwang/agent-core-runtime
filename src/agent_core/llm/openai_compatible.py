@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from dotenv import load_dotenv
@@ -35,10 +35,12 @@ class OpenAICompatibleChatModel:
         tool_choice: str | Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        on_delta = kwargs.pop("on_delta", None)
+        stream = bool(kwargs.pop("stream", False))
         request: dict[str, Any] = {
             "model": self.model,
             "messages": list(messages),
-            "stream": False,
+            "stream": stream,
             **kwargs,
         }
         if tools is not None:
@@ -50,6 +52,9 @@ class OpenAICompatibleChatModel:
         extra_body.update(dict(request.pop("extra_body", {}) or {}))
         if extra_body:
             request["extra_body"] = extra_body
+
+        if stream:
+            return self._chat_message_stream(request, on_delta=on_delta)
 
         response = self.client.chat.completions.create(**request)
         message = response.choices[0].message
@@ -68,6 +73,45 @@ class OpenAICompatibleChatModel:
         usage = getattr(response, "usage", None)
         if usage is not None:
             result["usage"] = usage.model_dump() if hasattr(usage, "model_dump") else usage
+        return result
+
+    def _chat_message_stream(
+        self,
+        request: dict[str, Any],
+        *,
+        on_delta: Callable[[str], None] | None,
+    ) -> dict[str, Any]:
+        content_parts: list[str] = []
+        tool_calls: dict[int, dict[str, Any]] = {}
+        response = self.client.chat.completions.create(**request)
+
+        for chunk in response:
+            choices = getattr(chunk, "choices", [])
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            if delta is None:
+                continue
+
+            content = getattr(delta, "content", None)
+            if content:
+                content_parts.append(content)
+                if on_delta is not None:
+                    on_delta(content)
+
+            for tool_call_delta in getattr(delta, "tool_calls", None) or []:
+                _merge_tool_call_delta(tool_calls, tool_call_delta)
+
+        result: dict[str, Any] = {
+            "role": "assistant",
+            "content": "".join(content_parts),
+        }
+        if tool_calls:
+            result["tool_calls"] = [
+                tool_calls[index]
+                for index in sorted(tool_calls)
+                if tool_calls[index].get("function", {}).get("name")
+            ]
         return result
 
 
@@ -126,3 +170,34 @@ def _default_extra_body(
         return {"thinking": {"type": "disabled"}}
     return {}
 
+
+def _merge_tool_call_delta(
+    tool_calls: dict[int, dict[str, Any]],
+    delta: Any,
+) -> None:
+    index = int(getattr(delta, "index", 0) or 0)
+    item = tool_calls.setdefault(
+        index,
+        {
+            "id": "",
+            "type": "function",
+            "function": {"name": "", "arguments": ""},
+        },
+    )
+
+    delta_id = getattr(delta, "id", None)
+    if delta_id:
+        item["id"] = delta_id
+    delta_type = getattr(delta, "type", None)
+    if delta_type:
+        item["type"] = delta_type
+
+    function = getattr(delta, "function", None)
+    if function is None:
+        return
+    name = getattr(function, "name", None)
+    if name:
+        item["function"]["name"] += name
+    arguments = getattr(function, "arguments", None)
+    if arguments:
+        item["function"]["arguments"] += arguments

@@ -17,5 +17,10 @@ class ChatModel(Protocol):
         tool_choice: str | Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Return one assistant message in OpenAI-compatible shape."""
+        """Return one assistant message in OpenAI-compatible shape.
+
+        Implementations may accept runtime kwargs such as ``stream=True`` and
+        ``on_delta=callable`` as long as the final return value is still one
+        complete assistant message.
+        """
         ...

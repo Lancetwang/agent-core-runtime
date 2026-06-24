@@ -47,6 +47,13 @@ class ModelNode(Node):
         tools = self._build_tools(state)
         chat_kwargs = dict(self.chat_kwargs)
         chat_kwargs.update(state.get(self.chat_kwargs_key, {}))
+        on_delta = chat_kwargs.pop("on_delta", None)
+        if context is not None and on_delta is not None:
+            chat_kwargs["on_delta"] = _wrap_delta_callback(context, on_delta)
+        elif context is not None:
+            chat_kwargs["on_delta"] = _emit_delta_event(context)
+        elif on_delta is not None:
+            chat_kwargs["on_delta"] = on_delta
 
         if context is not None:
             context.emit(
@@ -207,3 +214,25 @@ def _tool_names(tools: Sequence[Mapping[str, Any]]) -> list[str]:
             if isinstance(name, str):
                 names.append(name)
     return names
+
+
+def _emit_delta_event(context: Any) -> Callable[[str], None]:
+    def emit(content: str) -> None:
+        if content:
+            context.emit(
+                "model.delta",
+                category="model",
+                data={"content": content},
+            )
+
+    return emit
+
+
+def _wrap_delta_callback(context: Any, callback: Callable[[str], None]) -> Callable[[str], None]:
+    emit = _emit_delta_event(context)
+
+    def wrapped(content: str) -> None:
+        emit(content)
+        callback(content)
+
+    return wrapped

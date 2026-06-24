@@ -91,7 +91,73 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
             {"thinking": {"type": "disabled"}},
         )
 
+    def test_streaming_chat_message_aggregates_content_and_tool_calls(self) -> None:
+        chunks = [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content="Hello",
+                            tool_calls=[],
+                        )
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=" world",
+                            tool_calls=[],
+                        )
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call_1",
+                                    type="function",
+                                    function=SimpleNamespace(
+                                        name="get_weather",
+                                        arguments='{"city": "Shanghai"}',
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+        ]
+        client = FakeClient(chunks)
+        model = OpenAICompatibleChatModel(
+            api_key="test",
+            base_url="https://api.example.com",
+            model="demo-model",
+            client=client,
+        )
+        deltas = []
+
+        message = model.chat_message(
+            [{"role": "user", "content": "hello"}],
+            stream=True,
+            on_delta=deltas.append,
+        )
+
+        self.assertEqual(message["content"], "Hello world")
+        self.assertEqual(deltas, ["Hello", " world"])
+        self.assertEqual(message["tool_calls"][0]["function"]["name"], "get_weather")
+        self.assertEqual(
+            message["tool_calls"][0]["function"]["arguments"],
+            '{"city": "Shanghai"}',
+        )
+        self.assertTrue(client.chat.completions.last_request["stream"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

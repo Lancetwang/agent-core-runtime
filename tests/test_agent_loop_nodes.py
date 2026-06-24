@@ -22,6 +22,15 @@ class FakeChatModel:
         return self.responses.pop(0)
 
 
+class DeltaFakeChatModel:
+    def chat_message(self, messages, *, tools=None, tool_choice=None, **kwargs):
+        on_delta = kwargs.get("on_delta")
+        if on_delta is not None:
+            on_delta("hel")
+            on_delta("lo")
+        return {"role": "assistant", "content": "hello"}
+
+
 @tool(description="Look up demo weather.")
 def get_weather(city: Annotated[str, "City name."]) -> dict[str, str]:
     return {"city": city, "condition": "sunny"}
@@ -74,6 +83,19 @@ class AgentLoopNodeTests(unittest.TestCase):
 
         self.assertEqual(action, "tool_call")
         self.assertEqual(state["assistant_message"]["content"], "I will check that.")
+
+    def test_model_node_emits_delta_events(self) -> None:
+        node = ModelNode(model=DeltaFakeChatModel(), messages=build_messages)
+
+        result = Flow(node).run({"history": [{"role": "user", "content": "hi"}]})
+
+        delta_events = [
+            event for event in result.context.events if event.type == "model.delta"
+        ]
+        self.assertEqual(
+            [event.data["content"] for event in delta_events],
+            ["hel", "lo"],
+        )
 
     def test_build_tool_agent_flow_runs_tool_loop(self) -> None:
         model = FakeChatModel(
