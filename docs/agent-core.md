@@ -1,35 +1,21 @@
 # Agent Core Runtime Design
 
-This branch is a standalone runtime branch. It contains only generic agent runtime primitives under `agent_core`.
+`agent_core` is a generic runtime package. It should not contain application pipelines, domain prompts, domain tools, web UI code, or storage choices.
 
-## Package Boundary
-
-`agent_core` must stay application-agnostic:
-
-- no application pipeline code
-- no model-provider SDK dependency
-- no environment configuration management
-- no web server or frontend code
-- no domain-specific prompts or tools
-
-Applications should import `agent_core` and provide their own model adapters, prompts, tools, storage, and UI.
+The package does include a small OpenAI-compatible adapter because most users expect a cloned runtime to run after they add an API key. The adapter lives in `agent_core.llm` and stays thin: it converts messages, tools, streaming deltas, and usage into plain dictionaries.
 
 ## Runtime Model
 
-The runtime keeps a node-flow shape:
-
 - `Node` owns one unit of work and returns `(action, payload)`.
 - `Flow` routes each action to at most one next node.
-- `Agent` runs a flow.
-- `RunContext` belongs to one execution and carries runtime state that should not be hidden inside a business payload.
+- `Agent` wraps a flow and is itself a node.
+- `RunContext` belongs to one execution and carries messages, artifacts, metadata, and UI-friendly events.
 
-Existing nodes can use plain payload dictionaries. Richer nodes can call `get_current_context()` while running to add messages, artifacts, metadata, or UI-friendly events.
+Plain payload dictionaries are still useful for node-to-node arguments. Agent state that needs to survive across nodes or turns should live in `RunContext`.
 
-`TraceEvent` is the debug/logging layer. `AgentEvent` is the product-level event stream intended for observers and frontends.
+## Built-In Tool Loop
 
-## Standard Tool Loop
-
-The runtime includes a provider-neutral tool-agent loop:
+The common chat loop is:
 
 ```text
 ModelNode -> ToolRouterNode
@@ -37,16 +23,21 @@ ModelNode -> ToolRouterNode
               | final     -> flow end
 ```
 
-`ModelNode` only requires a `ChatModel` implementation. The protocol expects `chat_message(...)` to return an assistant message in an OpenAI-style shape:
+`Agent(model=..., instructions=..., tools=...)` builds that loop for the common case.
+
+If an application needs a different loop, it can create a `Flow` directly and pass it to `Agent(Flow(...))`.
+
+## Model Boundary
+
+`ChatModel` is the provider-neutral protocol. It returns assistant messages in an OpenAI-style shape:
 
 ```python
 {
     "role": "assistant",
     "content": "...",
     "tool_calls": [...],
+    "usage": {...},
 }
 ```
 
-This shape is intentionally generic and can be produced by any model adapter.
-
-`build_tool_agent_flow(...)` is a convenience helper for the common loop. Users can still wire nodes manually when they need a different structure.
+Any model provider can be used by implementing this small protocol.

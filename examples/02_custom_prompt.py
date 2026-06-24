@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from agent_core import Agent, Flow, ModelNode, RunContext, make_trace_options
-from _openai_compatible import build_demo_model, safe_print
+import sys
+
+from agent_core import Agent, Flow, ModelNode, RunContext, build_model_from_env, make_trace_options
 
 
 SYSTEM_PROMPT = (
@@ -19,7 +20,7 @@ def build_messages(payload: dict) -> list[dict[str, str]]:
 
 def build_agent() -> Agent:
     model_node = ModelNode(
-        model=build_demo_model(),
+        model=build_model_from_env(),
         messages=build_messages,
         chat_kwargs={"temperature": 0.2, "max_tokens": 220},
     )
@@ -27,6 +28,7 @@ def build_agent() -> Agent:
 
 
 def main() -> None:
+    configure_stdout()
     context = RunContext()
     result = build_agent().run(
         {
@@ -38,9 +40,14 @@ def main() -> None:
     )
 
     assistant_message = result.payload["assistant_message"]
-    safe_print(assistant_message["content"])
-    safe_print(f"path: {' -> '.join(result.path)}")
-    safe_print(f"context events: {len(context.events)}")
+    print(assistant_message["content"])
+    print(f"path: {' -> '.join(result.path)}")
+    print(f"context events: {len(context.events)}")
+
+
+def configure_stdout() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 if __name__ == "__main__":

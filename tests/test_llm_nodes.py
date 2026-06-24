@@ -40,7 +40,7 @@ def build_messages(payload: dict) -> list[dict]:
     return [{"role": "system", "content": "Use tools when useful."}, *payload["history"]]
 
 
-class AgentLoopNodeTests(unittest.TestCase):
+class LlmNodeTests(unittest.TestCase):
     def test_model_node_stores_assistant_message(self) -> None:
         model = FakeChatModel(
             [{"role": "assistant", "content": "hello", "usage": {"total_tokens": 3}}]

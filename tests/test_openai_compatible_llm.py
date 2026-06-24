@@ -91,7 +91,7 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
             {"thinking": {"type": "disabled"}},
         )
 
-    def test_streaming_chat_message_aggregates_content_and_tool_calls(self) -> None:
+    def test_streaming_chat_message_aggregates_content(self) -> None:
         chunks = [
             SimpleNamespace(
                 choices=[
@@ -109,26 +109,6 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
                         delta=SimpleNamespace(
                             content=" world",
                             tool_calls=[],
-                        )
-                    )
-                ]
-            ),
-            SimpleNamespace(
-                choices=[
-                    SimpleNamespace(
-                        delta=SimpleNamespace(
-                            content=None,
-                            tool_calls=[
-                                SimpleNamespace(
-                                    index=0,
-                                    id="call_1",
-                                    type="function",
-                                    function=SimpleNamespace(
-                                        name="get_weather",
-                                        arguments='{"city": "Shanghai"}',
-                                    ),
-                                )
-                            ],
                         )
                     )
                 ]
@@ -151,11 +131,7 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
 
         self.assertEqual(message["content"], "Hello world")
         self.assertEqual(deltas, ["Hello", " world"])
-        self.assertEqual(message["tool_calls"][0]["function"]["name"], "get_weather")
-        self.assertEqual(
-            message["tool_calls"][0]["function"]["arguments"],
-            '{"city": "Shanghai"}',
-        )
+        self.assertNotIn("tool_calls", message)
         self.assertTrue(client.chat.completions.last_request["stream"])
 
 

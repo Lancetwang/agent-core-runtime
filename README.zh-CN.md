@@ -2,155 +2,117 @@
 
 [English README](README.md)
 
-Agent Core Runtime 是一个轻量级 Python agent runtime，用显式、可组合的 `Node` 和 `Flow` 搭建 agent。它内置了 OpenAI-compatible 模型适配器，所以 clone 后只要在本地 `.env` 填好 key，就可以直接跑真实模型示例。
+Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个明确的元件：`Node`、`Flow`、`RunContext`、`Tool` 和 `Agent`。
 
-## 提供什么
+## 这个项目提供什么
 
-- `Node`：一个处理单元，接口是 `exec(payload) -> (action, payload)`。
-- `Flow`：根据 `action` 路由到下一个节点，每个 action 最多对应一个 next node。
-- `Agent`：对 `Flow` 的薄封装，负责运行。
-- `RunContext`：保存一次运行中的 messages、artifacts、metadata 和适合 UI 展示的 runtime events。
-- `Tool` 和 `@tool`：把有类型标注的 Python 函数转换成 LLM 可调用工具 schema。
-- `ToolExecutor` 和 `ToolCallNode`：解析工具调用、执行工具、追加 tool message。
-- `ChatModel`、`ModelNode`、`ToolRouterNode`：通用的 model/tool/model 回路。
-- `OpenAICompatibleChatModel`：内置 OpenAI-compatible chat completion 适配器。
+它的目标是足够小、足够直接，也方便你替换其中任何一层：
 
-`payload` 仍然是最基础的节点传递机制；`RunContext` 是额外的运行上下文层，用来承载更丰富的 agent 状态和事件流。
+- `Node`：一个工作单元。
+- `Flow`：根据 action 名称把节点连起来。
+- `Agent`：本身也是 `Node`，既可以单独运行，也可以嵌进更大的 flow。
+- `RunContext`：保存一次运行中的 messages、events、metadata 和 artifacts。
+- `@tool`：把带类型标注的 Python 函数转换成 OpenAI-compatible tool schema。
+- `OpenAICompatibleChatModel`：对 OpenAI SDK 的薄封装。
 
-## 运行执行逻辑
+你可以一行声明一个普通工具 agent；如果需要特殊循环，也可以自己连节点。
 
-```mermaid
-flowchart TD
-    App["应用代码"] --> AgentRun["Agent.run(payload, context?)"]
-    AgentRun --> FlowRun["Flow.run(max_steps)"]
-    FlowRun --> InitContext["创建或复用 RunContext"]
-    InitContext --> PickNode["current node"]
-
-    PickNode --> StartEvent["emit node.start"]
-    StartEvent --> SyncBefore["context.sync_payload(payload)"]
-    SyncBefore --> Exec["node._exec(payload)"]
-    Exec --> Result["返回 (action, payload)"]
-    Result --> SyncAfter["context.sync_payload(payload)"]
-    SyncAfter --> EndEvent["emit node.end"]
-    EndEvent --> NextNode["successors[action]"]
-    NextNode -->|"存在 next node"| PickNode
-    NextNode -->|"没有 next node"| FlowEnd["emit flow.end"]
-    FlowEnd --> RunResult["FlowRunResult<br/>payload, path, trace, context"]
-
-    subgraph State["运行状态"]
-        Payload["payload<br/>节点间传递"]
-        Context["RunContext<br/>单次运行状态"]
-        Messages["messages"]
-        Metadata["metadata"]
-        Artifacts["artifacts"]
-        Events["AgentEvent stream"]
-    end
-
-    Exec <--> Payload
-    Exec -. "get_current_context()" .-> Context
-    Context --> Messages
-    Context --> Metadata
-    Context --> Artifacts
-    Context --> Events
-```
-
-`payload` 是节点之间最直接的传递对象。`RunContext` 是单次运行的持久状态层，用来承载对话消息、UI 事件、metadata 和 artifacts。
-
-## 工具 Agent 与流式回路
+## 运行结构
 
 ```mermaid
 flowchart TD
-    User["用户输入"] --> AddUser["context.add_message('user', text)"]
-    AddUser --> ModelNode["ModelNode"]
-    ModelNode --> BuildRequest["从 RunContext 取 messages<br/>从 @tool 生成工具 schemas"]
-    BuildRequest --> Adapter["OpenAICompatibleChatModel"]
-    Adapter -->|"非流式或工具决策"| AssistantMessage["assistant message"]
-    Adapter -->|"stream=True"| Delta["model.delta events<br/>可选 on_delta callback"]
-    Delta --> AssistantMessage
-    AssistantMessage --> StoreAssistant["追加 assistant message<br/>到 payload 和 RunContext"]
-    StoreAssistant --> Router["ToolRouterNode"]
+    App["应用层"] --> Agent["Agent"]
+    Agent -->|"直接聊天"| BuiltIn["内置 model/tool loop"]
+    Agent -->|"自定义"| Flow["Flow"]
+    Agent -. "Agent 也是 Node" .-> OuterFlow["另一个 Flow"]
 
-    Router -->|"存在 tool_calls"| ToolNode["ToolCallNode"]
-    ToolNode --> ParseCalls["ToolExecutor.parse_tool_calls"]
-    ParseCalls --> ExecuteTools["执行 @tool 函数"]
-    ExecuteTools --> ToolMessages["追加 tool messages<br/>到 payload 和 RunContext"]
-    ToolMessages --> ModelNode
+    Flow --> Node["Node"]
+    Node -->|"action"| Next["下一个 Node"]
+    Next --> Node
 
-    Router -->|"没有 tool_calls"| Final["最终回答写入 payload"]
-    Final --> Artifact["可选 context.set_artifact"]
+    Node --> Context["RunContext"]
+    Context --> Messages["messages"]
+    Context --> Events["events"]
+    Context --> Artifacts["artifacts"]
+    Context --> Metadata["metadata"]
+
+    BuiltIn --> ModelNode["ModelNode"]
+    ModelNode --> ChatModel["ChatModel"]
+    ChatModel --> OpenAI["OpenAI-compatible API"]
+    ModelNode --> Router["ToolRouterNode"]
+    Router -->|"tool_calls"| ToolNode["ToolCallNode"]
+    ToolNode --> Tools["@tool 函数"]
+    ToolNode --> ModelNode
+    Router -->|"没有 tool_calls"| Answer["answer"]
 ```
-
-常见的工具 agent 可以直接用 `build_tool_agent_flow(...)` 搭出来，不需要手动连接每一个节点。
 
 ## 项目结构
 
 ```text
 src/agent_core/
-  agent.py              # Agent runner
-  core/                 # Node, Flow, RunContext, trace/runtime events
-  llm/                  # 内置 OpenAI-compatible ChatModel 适配器
-  models.py             # 与供应商无关的 ChatModel 协议
-  nodes/                # 可复用 agent-loop 节点
-  tools/                # Tool 装饰器、执行器、文件工具、工具调用节点
+  agent.py              # Agent：直接聊天入口，也是可嵌套的 Node
+  core/                 # Node, Flow, RunContext, trace events
+  llm/                  # ChatModel 协议、ModelNode、router、OpenAI adapter
+  tools/                # @tool, ToolExecutor, ToolCallNode, file tools
 examples/
-  01_basic_agent.py     # 纯 Node/Flow action routing
-  02_custom_prompt.py   # 真实模型，展示 ModelNode 和 RunContext
-  03_custom_tool.py     # @tool schema 生成和 ToolExecutor
-  04_tool_agent.py      # Context-first 的 model/tool/model 回路
-  05_custom_agent.py    # 应用层客制化 agent 包装方式
-  _openai_compatible.py # 示例共享 helper，不是公开 API
-tests/                  # runtime 单元测试
+  01_basic_agent.py     # 只使用 Node 和 Flow
+  02_custom_prompt.py   # 真实模型调用和自定义 prompt
+  03_custom_tool.py     # 工具 schema 和执行
+  04_tool_agent.py      # 手动连接 model-tool-model loop
+  05_custom_agent.py    # 直接 Agent(model, instructions, tools)
+tests/
 ```
 
 ## 安装
 
 ```powershell
 uv sync
-```
-
-复制环境变量模板：
-
-```powershell
 Copy-Item .env.example .env
 ```
 
-然后在 `.env` 中填写 `OPENAI_API_KEY`。也支持 `DEEPSEEK_API_KEY`。默认配置面向 DeepSeek：
+在 `.env` 中填写其中一个：
+
+```text
+OPENAI_API_KEY=...
+# 或
+DEEPSEEK_API_KEY=...
+```
+
+默认配置面向 DeepSeek：
 
 ```text
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
 ```
 
-`.env` 已被 Git 忽略，不会提交到仓库。
+`.env` 已被 Git 忽略。
 
-## 示例顺序
+## 快速声明 Agent
 
-示例按从小到完整排列：
+```python
+from typing import Annotated
 
-```powershell
-uv run python examples/01_basic_agent.py
-uv run python examples/02_custom_prompt.py
-uv run python examples/03_custom_tool.py
-uv run python examples/04_tool_agent.py --events
-uv run python examples/04_tool_agent.py --stream --context messages
-uv run python examples/05_custom_agent.py
+from agent_core import Agent, build_model_from_env, tool
+
+@tool(description="Search private notes.")
+def search_notes(topic: Annotated[str, "Topic to search."]) -> dict[str, str]:
+    return {"topic": topic, "result": "mock note"}
+
+agent = Agent(
+    model=build_model_from_env(),
+    instructions="You are a concise research assistant.",
+    tools=[search_notes],
+    chat_kwargs={"tool_choice": "auto"},
+)
+
+context = agent.new_context()
+answer = agent.chat("Draft a short evaluation plan.", context=context)
+print(answer)
 ```
 
-这组 case 的顺序是：
+## 自定义 Flow
 
-- `01_basic_agent.py`：不需要 LLM，只展示 `CallableNode`、分支 action、`Flow` 和 trace。
-- `02_custom_prompt.py`：通过 `ModelNode` 真实调用模型，messages 从 payload 构建，事件进入 `RunContext`。
-- `03_custom_tool.py`：Python 函数变成 `Tool`，导出 OpenAI-compatible schema，并通过 `ToolExecutor` 执行。
-- `04_tool_agent.py`：完整的 model-tool-model 回路，但 messages、实时 events、metadata 和 artifacts 都放在 `RunContext`，payload 只承载本次运行的小输入。
-- `05_custom_agent.py`：展示如何把 instructions、tools、flow 和持久化 context 包装成自己的客制化 agent。
-
-`04_tool_agent.py` 常用参数：
-
-- `--stream`：在工具结果可用后流式输出最终 assistant 文本，同时仍然向 flow 返回完整 assistant message。
-- `--events`：实时打印 `RunContext` 事件，例如 node/model/tool 的活动。
-- `--context summary|messages|events|artifacts|all|none`：每轮结束后查看不同粒度的累计 context。
-
-## 基础 Flow
+当你不想用普通聊天循环时，就直接连节点：
 
 ```python
 from agent_core import Agent, CallableNode, Flow
@@ -162,52 +124,61 @@ def answer(payload: dict) -> dict:
     payload["answer"] = "received"
     return payload
 
-start = CallableNode(classify)
+router = CallableNode(classify)
 answer_node = CallableNode(answer)
 
-start - "question" >> answer_node
-start - "statement" >> answer_node
+router - "question" >> answer_node
+router - "statement" >> answer_node
 
-result = Agent(Flow(start)).run({"text": "Hello?"})
+result = Agent(Flow(router)).run({"text": "Hello?"})
 print(result.payload["answer"])
 ```
 
-## 工具定义
+因为 `Agent` 本身也是 `Node`，所以 agent 可以继续组合成更大的 agent：
 
 ```python
-from typing import Annotated, Literal
+researcher = Agent(model=model, instructions="Research.", tools=[search_notes])
+writer = Agent(model=model, instructions="Write the final response.")
 
-from agent_core import tool
-
-@tool(description="Look up demo weather for a supported city.")
-def get_weather(
-    city: Annotated[Literal["Shanghai", "Tokyo"], "English city name."],
-) -> dict[str, str]:
-    return {"city": city, "condition": "sunny"}
+researcher >> writer
+team = Agent(Flow(researcher))
 ```
 
-工具 schema 会从函数签名、类型标注和 `Annotated` 描述中生成。
+## 示例
+
+按顺序运行：
+
+```powershell
+uv run python examples/01_basic_agent.py
+uv run python examples/02_custom_prompt.py
+uv run python examples/03_custom_tool.py
+uv run python examples/04_tool_agent.py --stream --context messages
+uv run python examples/05_custom_agent.py
+```
+
+`04_tool_agent.py` 支持：
+
+- `--stream`：流式输出最终 assistant 回复。
+- `--context summary|messages|events|artifacts|all|none`：查看运行上下文。
 
 ## Runtime Events
 
-每次 flow 运行都会返回 context：
+每次运行都会返回 `RunContext`：
 
 ```python
-result = agent.run({"history": []})
-events = [event.to_dict() for event in result.context.events]
+result = agent.run({"text": "hello"})
 messages = result.context.messages
+events = [event.to_dict() for event in result.context.events]
 ```
 
-终端示例中可以用 `examples/04_tool_agent.py --context all` 查看完整 context 快照，包括 messages、artifacts、metadata 和 runtime events。
-
-节点运行中也可以主动发事件：
+节点内部也可以写入当前 context：
 
 ```python
 from agent_core import get_current_context
 
 context = get_current_context()
-if context is not None:
-    context.emit("custom.event", category="custom", data={"ok": True})
+if context:
+    context.set_artifact("note", "saved")
 ```
 
 ## 验证

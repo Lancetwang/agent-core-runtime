@@ -1,10 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
 from typing import Annotated, Literal
 
-from agent_core import Agent, RunContext, build_tool_agent_flow, get_current_context, tool
-from _openai_compatible import build_demo_model, safe_print
+from agent_core import Agent, build_model_from_env, get_current_context, tool
+
+
+INSTRUCTIONS = """
+You are a custom research brief agent.
+
+Use tools when notes are useful. Return a compact answer with:
+- recommendation
+- evidence used
+- next step
+""".strip()
 
 
 @tool(description="Search mock internal notes for a topic.")
@@ -33,60 +42,31 @@ def save_working_note(
     return {"title": title, "content": content, "status": "saved in mock storage"}
 
 
-@dataclass
-class CustomResearchAgent:
-    """A small application-level wrapper around the reusable runtime.
-
-    This is the intended customization style: define instructions, tools, and a
-    flow once, then expose a simple method that your application can call.
-    """
-
-    name: str
-    instructions: str
-    agent: Agent
-    context: RunContext
-
-    @classmethod
-    def create(cls, *, name: str, instructions: str) -> CustomResearchAgent:
-        context = RunContext()
-        context.metadata["agent_name"] = name
-        context.add_message("system", instructions)
-
-        flow = build_tool_agent_flow(
-            model=build_demo_model(),
-            tools=[search_notes, save_working_note],
-            chat_kwargs={"temperature": 0.2, "max_tokens": 600, "tool_choice": "auto"},
-        )
-        return cls(name=name, instructions=instructions, agent=Agent(flow), context=context)
-
-    def ask(self, text: str) -> str:
-        self.context.add_message("user", text)
-        result = self.agent.run({"request": text}, context=self.context, max_steps=12)
-        answer = str(result.payload.get("answer", ""))
-        self.context.set_artifact("last_answer", answer)
-        return answer
-
-
 def main() -> None:
-    agent = CustomResearchAgent.create(
-        name="brief-writer",
-        instructions=(
-            "You are a custom research brief agent. Use tools when notes are useful. "
-            "Return a compact answer with a recommendation and next step."
-        ),
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    agent = Agent(
+        model=build_model_from_env(),
+        instructions=INSTRUCTIONS,
+        tools=[search_notes, save_working_note],
+        chat_kwargs={"temperature": 0.2, "max_tokens": 600, "tool_choice": "auto"},
     )
+    context = agent.new_context()
+    context.metadata["agent_name"] = "brief-writer"
 
-    answer = agent.ask(
+    answer = agent.chat(
         "Create a short plan for evaluating whether a small agent runtime is ready "
-        "to be used in an application."
+        "to be used in an application.",
+        context=context,
+        max_steps=12,
     )
 
-    safe_print(answer)
-    safe_print()
-    safe_print(f"agent name: {agent.context.metadata['agent_name']}")
-    safe_print(f"messages stored in RunContext: {len(agent.context.messages)}")
-    safe_print(f"events stored in RunContext: {len(agent.context.events)}")
-    safe_print(f"artifacts: {list(agent.context.artifacts)}")
+    print(answer)
+    print()
+    print(f"agent name: {context.metadata['agent_name']}")
+    print(f"messages stored in RunContext: {len(context.messages)}")
+    print(f"events stored in RunContext: {len(context.events)}")
+    print(f"artifacts: {list(context.artifacts)}")
 
 
 if __name__ == "__main__":

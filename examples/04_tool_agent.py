@@ -7,7 +7,6 @@ from typing import Annotated, Literal
 
 from agent_core import (
     Agent,
-    AgentEvent,
     CallableNode,
     Flow,
     ModelNode,
@@ -15,9 +14,9 @@ from agent_core import (
     ToolCallNode,
     ToolExecutor,
     ToolRouterNode,
+    build_model_from_env,
     tool,
 )
-from _openai_compatible import build_demo_model, safe_print
 
 
 SYSTEM_PROMPT = """
@@ -57,8 +56,8 @@ def tell_joke(
     }
 
 
-def build_context(*, stream_events: bool = False) -> RunContext:
-    context = RunContext(on_event=print_event if stream_events else None)
+def build_context() -> RunContext:
+    context = RunContext()
     context.metadata["example"] = "04_tool_agent"
     context.add_message("system", SYSTEM_PROMPT)
     return context
@@ -67,7 +66,7 @@ def build_context(*, stream_events: bool = False) -> RunContext:
 def build_agent() -> Agent:
     tools = [get_weather, tell_joke]
     model_node = ModelNode(
-        model=build_demo_model(),
+        model=build_model_from_env(),
         messages=None,
         tools=tools,
         action="route",
@@ -113,46 +112,45 @@ def run_turn(agent: Agent, context: RunContext, user_input: str, *, stream: bool
     return answer
 
 
-def run_demo(*, stream_events: bool, stream_answer: bool, context_view: str) -> None:
+def run_demo(*, stream_answer: bool, context_view: str) -> None:
     agent = build_agent()
-    context = build_context(stream_events=stream_events)
+    context = build_context()
     questions = [
         "What is the weather in Shanghai?",
-        "Compare Shanghai and Tokyo weather, then tell one weather joke.",
+        "Use tools to compare Shanghai and Tokyo weather, then tell one weather joke.",
     ]
     for question in questions:
-        safe_print(f"> {question}")
+        print(f"> {question}")
         answer = run_turn(agent, context, question, stream=stream_answer)
         if stream_answer and context.metadata.get("last_answer_streamed"):
-            safe_print()
+            print()
         else:
-            safe_print(answer)
+            print(answer)
         print_context(context, context_view)
-        safe_print()
+        print()
 
 
-def run_interactive(*, stream_events: bool, stream_answer: bool, context_view: str) -> None:
+def run_interactive(*, stream_answer: bool, context_view: str) -> None:
     agent = build_agent()
-    context = build_context(stream_events=stream_events)
-    safe_print("agent-core tool agent. Type 'exit' to quit.")
+    context = build_context()
+    print("agent-core tool agent. Type 'exit' to quit.")
     while True:
         user_input = input("> ").strip()
         if user_input.lower() in {"exit", "quit", "q"}:
-            safe_print("bye")
+            print("bye")
             return
         if user_input:
             answer = run_turn(agent, context, user_input, stream=stream_answer)
             if stream_answer and context.metadata.get("last_answer_streamed"):
-                safe_print()
+                print()
             else:
-                safe_print(answer)
+                print(answer)
             print_context(context, context_view)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a real OpenAI-compatible tool agent.")
     parser.add_argument("--interactive", action="store_true", help="Start an interactive chat.")
-    parser.add_argument("--events", action="store_true", help="Stream RunContext events.")
     parser.add_argument("--stream", action="store_true", help="Stream assistant text deltas.")
     parser.add_argument(
         "--context",
@@ -174,7 +172,7 @@ def print_context(context: RunContext, view: str) -> None:
     if view == "none":
         return
     if view == "summary":
-        safe_print(
+        print(
             "[context] "
             f"messages={len(context.messages)} "
             f"events={len(context.events)} "
@@ -188,40 +186,25 @@ def print_context(context: RunContext, view: str) -> None:
         "artifacts": context.artifacts,
         "all": context.to_dict(),
     }
-    safe_print(f"[context:{view}]")
-    safe_print(json.dumps(snapshots[view], ensure_ascii=False, indent=2))
+    print(f"[context:{view}]")
+    print(json.dumps(snapshots[view], ensure_ascii=False, indent=2))
 
 
 def count_model_deltas(context: RunContext) -> int:
     return sum(1 for event in context.events if event.type == "model.delta")
 
 
-def print_event(event: AgentEvent) -> None:
-    if event.category not in {"node", "model", "tool", "flow", "artifact"}:
-        return
-    parts = [f"[event:{event.category}]", event.type]
-    if event.step is not None:
-        parts.append(f"step={event.step}")
-    if event.node:
-        parts.append(f"node={event.node}")
-    if event.action:
-        parts.append(f"action={event.action}")
-    if event.data:
-        parts.append(f"data={event.data}")
-    safe_print(" ".join(parts))
-
-
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     args = parse_args()
     if args.interactive:
         run_interactive(
-            stream_events=args.events,
             stream_answer=args.stream,
             context_view=args.context,
         )
     else:
         run_demo(
-            stream_events=args.events,
             stream_answer=args.stream,
             context_view=args.context,
         )
