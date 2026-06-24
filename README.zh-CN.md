@@ -144,6 +144,8 @@ researcher >> writer
 team = Agent(Flow(researcher))
 ```
 
+如果希望子 agent 把内部 flow 的最终 action 透传给外层 flow，可以使用 `Agent(flow, action=None)`。
+
 ## 示例
 
 按顺序运行：

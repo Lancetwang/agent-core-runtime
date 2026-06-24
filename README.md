@@ -144,6 +144,8 @@ researcher >> writer
 team = Agent(Flow(researcher))
 ```
 
+Use `Agent(flow, action=None)` when a sub-agent should expose the final action from its inner flow instead of always returning `"default"`.
+
 ## Examples
 
 Run the examples in order:

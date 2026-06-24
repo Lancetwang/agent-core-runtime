@@ -101,6 +101,20 @@ class AgentCorePackageTests(unittest.TestCase):
             [event.node for event in result.context.events if event.category == "node"],
         )
 
+    def test_agent_can_preserve_inner_flow_action(self) -> None:
+        inner_agent = Agent(
+            Flow(CallableNode(lambda payload: ("special", payload))),
+            action=None,
+        )
+        target = CallableNode(lambda payload: {"ok": True})
+        inner_agent - "special" >> target
+
+        result = Flow(inner_agent).run({})
+
+        self.assertEqual(result.action, "default")
+        self.assertEqual(result.payload["ok"], True)
+        self.assertEqual(result.path, ["Agent", "CallableNode"])
+
     def test_nested_agents_add_each_instruction_once(self) -> None:
         first = Agent(
             Flow(CallableNode(lambda payload: {"seen": ["first"]})),

@@ -27,7 +27,7 @@ class Agent(Node):
         instructions: str | None = None,
         tools: Sequence[Tool] | None = None,
         chat_kwargs: Mapping[str, Any] | None = None,
-        action: Action = "default",
+        action: Action | None = "default",
         max_steps: int = 100,
         max_retries: int = 1,
         wait: float = 0,
@@ -97,7 +97,7 @@ class Agent(Node):
             trace=False,
             context=context,
         )
-        return self.action, result.payload
+        return ((result.action or "default") if self.action is None else self.action), result.payload
 
     def _prepare_context(self, context: RunContext | None) -> RunContext | None:
         if self.instructions is None:
