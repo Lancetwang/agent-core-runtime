@@ -1,32 +1,47 @@
-from typing import Any
+from __future__ import annotations
 
-from agent_core import Agent, build_tool_agent_flow
-from _openai_compatible import build_model_from_env, safe_print
-
-
-SYSTEM_PROMPT = """
-You are a practical materials-science writing assistant.
-Answer in three compact bullet points.
-Avoid hype.
-""".strip()
+from agent_core import Agent, Flow, ModelNode, RunContext, make_trace_options
+from _openai_compatible import build_demo_model, safe_print
 
 
-def build_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
+SYSTEM_PROMPT = (
+    "You are a concise runtime assistant. "
+    "Explain agent-core concepts in plain English and keep the answer short."
+)
+
+
+def build_messages(payload: dict) -> list[dict[str, str]]:
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": payload["system_prompt"]},
         {"role": "user", "content": payload["question"]},
     ]
 
 
-agent = Agent(
-    build_tool_agent_flow(
-        model=build_model_from_env(),
+def build_agent() -> Agent:
+    model_node = ModelNode(
+        model=build_demo_model(),
         messages=build_messages,
-        tools=[],
-        chat_kwargs={"temperature": 0},
+        chat_kwargs={"temperature": 0.2, "max_tokens": 220},
     )
-)
+    return Agent(Flow(model_node))
 
-result = agent.run({"question": "How should I think about catalyst stability?"})
-safe_print(result.payload["answer"])
 
+def main() -> None:
+    context = RunContext()
+    result = build_agent().run(
+        {
+            "system_prompt": SYSTEM_PROMPT,
+            "question": "What is the difference between Agent, Flow, and Node?",
+        },
+        context=context,
+        trace=make_trace_options(enabled=True, include=["node", "model"]),
+    )
+
+    assistant_message = result.payload["assistant_message"]
+    safe_print(assistant_message["content"])
+    safe_print(f"path: {' -> '.join(result.path)}")
+    safe_print(f"context events: {len(context.events)}")
+
+
+if __name__ == "__main__":
+    main()

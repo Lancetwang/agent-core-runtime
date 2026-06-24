@@ -1,25 +1,46 @@
-from typing import Any
+from __future__ import annotations
 
-from agent_core import Agent, build_tool_agent_flow
-from _openai_compatible import build_model_from_env, safe_print
-
-
-def build_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        {"role": "system", "content": "You are a concise assistant."},
-        {"role": "user", "content": payload["input"]},
-    ]
+from agent_core import Agent, CallableNode, Flow, make_trace_options
 
 
-agent = Agent(
-    build_tool_agent_flow(
-        model=build_model_from_env(),
-        messages=build_messages,
-        tools=[],
-        chat_kwargs={"temperature": 0},
+def classify(payload: dict) -> tuple[str, dict]:
+    text = str(payload["input"]).strip()
+    payload["kind"] = "question" if text.endswith("?") else "statement"
+    return payload["kind"], payload
+
+
+def answer_question(payload: dict) -> dict:
+    payload["answer"] = f"Question received: {payload['input']}"
+    return payload
+
+
+def answer_statement(payload: dict) -> dict:
+    payload["answer"] = f"Statement received: {payload['input']}"
+    return payload
+
+
+def build_agent() -> Agent:
+    router = CallableNode(classify)
+    question = CallableNode(answer_question)
+    statement = CallableNode(answer_statement)
+
+    router - "question" >> question
+    router - "statement" >> statement
+
+    return Agent(Flow(router))
+
+
+def main() -> None:
+    agent = build_agent()
+    result = agent.run(
+        {"input": "How does a flow choose the next node?"},
+        trace=make_trace_options(enabled=True, include=["node", "flow"]),
     )
-)
 
-result = agent.run({"input": "Say hello in one short sentence."})
-safe_print(result.payload["answer"])
+    print(result.payload["answer"])
+    print("path:", " -> ".join(result.path))
+    print("trace events:", len(result.trace))
 
+
+if __name__ == "__main__":
+    main()

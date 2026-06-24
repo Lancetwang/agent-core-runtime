@@ -1,60 +1,199 @@
 # Agent Core Runtime
 
-Agent Core Runtime is a lightweight Python runtime for building tool-using agents from explicit `Node` and `Flow` primitives.
+Agent Core Runtime is a small Python runtime for building agents from explicit, composable parts. It includes a built-in OpenAI-compatible chat adapter, so a fresh clone can run real model examples after you fill in a local `.env`.
 
-## Read This README In
+[中文 README](README.zh-CN.md)
 
-- [English](README.en.md)
-- [中文](README.zh-CN.md)
+## What It Provides
 
-## Quick Routes
+- `Node`: one unit of work with `exec(payload) -> (action, payload)`.
+- `Flow`: routes each action to at most one next node.
+- `Agent`: a thin runner around a `Flow`.
+- `RunContext`: per-run messages, artifacts, metadata, and UI-friendly runtime events.
+- `Tool` and `@tool`: typed Python functions converted into LLM-callable tool schemas.
+- `ToolExecutor` and `ToolCallNode`: tool-call parsing, execution, and message appending.
+- `ChatModel`, `ModelNode`, and `ToolRouterNode`: provider-neutral model/tool/model loops.
+- `OpenAICompatibleChatModel`: built-in adapter for OpenAI-compatible chat completion APIs.
 
-- Runtime package: `src/agent_core/`
-- LLM adapter: `src/agent_core/llm/openai_compatible.py`
-- Tool system: `src/agent_core/tools/`
-- Reusable agent-loop nodes: `src/agent_core/nodes/`
-- Examples: `examples/`
-- Runtime design notes: `docs/agent-core.md`
+The original payload contract remains the baseline. `RunContext` is an additional runtime layer for richer agent state and event streaming.
 
-## Runtime Shape
+## Runtime Layers
 
 ```mermaid
 flowchart TD
-    User["User / Application"] --> Agent["Agent"]
+    App["Application code"] --> Agent["Agent"]
     Agent --> Flow["Flow"]
-    Flow --> Node["Node.exec(payload)"]
-    Node --> Action["action"]
-    Action --> Flow
-    Node --> Payload["payload"]
-    Payload --> Flow
+    Flow --> Node["Node"]
 
-    Flow -. emits .-> Context["RunContext"]
-    Node -. reads/writes .-> Context
-    Context --> Events["AgentEvent / TraceEvent"]
+    subgraph Control["Control layer"]
+        Agent
+        Flow
+        Node
+    end
 
-    Node --> ModelNode["ModelNode"]
-    ModelNode --> ChatModel["ChatModel"]
-    ChatModel --> LLM["OpenAI-compatible API"]
+    subgraph State["State and observability"]
+        Payload["payload"]
+        Context["RunContext"]
+        Events["AgentEvent / TraceEvent"]
+    end
 
-    ModelNode --> ToolRouter["ToolRouterNode"]
-    ToolRouter -->|"tool_call"| ToolCall["ToolCallNode"]
-    ToolCall --> Executor["ToolExecutor"]
-    Executor --> Tools["@tool functions"]
+    subgraph Model["Model layer"]
+        ModelNode["ModelNode"]
+        ChatModel["ChatModel protocol"]
+        OpenAIAdapter["OpenAICompatibleChatModel"]
+        Provider["OpenAI-compatible provider"]
+    end
+
+    subgraph Tooling["Tool layer"]
+        ToolRouter["ToolRouterNode"]
+        ToolCall["ToolCallNode"]
+        Executor["ToolExecutor"]
+        ToolFns["@tool Python functions"]
+    end
+
+    Node --> Payload
+    Node -.-> Context
+    Context --> Events
+    Node --> ModelNode
+    ModelNode --> ChatModel --> OpenAIAdapter --> Provider
+    ModelNode --> ToolRouter
+    ToolRouter -->|"tool_call"| ToolCall --> Executor --> ToolFns
     ToolCall --> ModelNode
-    ToolRouter -->|"final"| Result["Final answer"]
+    ToolRouter -->|"final"| Payload
 ```
 
-## Quick Start
+## Standard Tool-Agent Loop
+
+```mermaid
+flowchart LR
+    A["ModelNode<br/>call model"] --> B["ToolRouterNode<br/>inspect assistant message"]
+    B -->|"tool_calls exist"| C["ToolCallNode<br/>execute tools"]
+    C --> D["append tool messages"]
+    D --> A
+    B -->|"no tool_calls"| E["final answer"]
+```
+
+Use `build_tool_agent_flow(...)` when you want this common loop without manually wiring nodes.
+
+## Layout
+
+```text
+src/agent_core/
+  agent.py              # Thin Agent runner
+  core/                 # Node, Flow, RunContext, trace/runtime events
+  llm/                  # Built-in OpenAI-compatible ChatModel adapter
+  models.py             # Provider-neutral ChatModel protocol
+  nodes/                # Reusable agent-loop nodes
+  tools/                # Tool decorator, executor, file tools, tool-call node
+examples/
+  01_basic_agent.py     # Pure Node/Flow action routing
+  02_custom_prompt.py   # Real model through ModelNode and RunContext
+  03_custom_tool.py     # @tool schema generation and ToolExecutor
+  04_tool_agent.py      # Real model + ToolRouterNode + ToolCallNode loop
+  _openai_compatible.py # Shared example helper, not a public API
+tests/                  # Runtime-only unit tests
+```
+
+## Install
 
 ```powershell
 uv sync
+```
+
+Copy the env template:
+
+```powershell
 Copy-Item .env.example .env
 ```
 
-Set `OPENAI_API_KEY` or `DEEPSEEK_API_KEY` in `.env`, then run:
+Then set `OPENAI_API_KEY` in `.env`. `DEEPSEEK_API_KEY` is also supported. The defaults target DeepSeek:
+
+```text
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
+```
+
+The `.env` file is ignored by Git.
+
+## Progressive Examples
+
+Run them in order:
 
 ```powershell
 uv run python examples/01_basic_agent.py
-uv run python examples/04_tool_agent.py
+uv run python examples/02_custom_prompt.py
+uv run python examples/03_custom_tool.py
+uv run python examples/04_tool_agent.py --trace
 ```
 
+The sequence is intentionally small:
+
+- `01_basic_agent.py`: no LLM, only `CallableNode`, branch actions, `Flow`, and trace.
+- `02_custom_prompt.py`: a real model call through `ModelNode`, with messages built from payload and events stored in `RunContext`.
+- `03_custom_tool.py`: a Python function becomes a `Tool`, exports OpenAI-compatible schema, and runs through `ToolExecutor`.
+- `04_tool_agent.py`: a complete model-tool-model loop using `build_tool_agent_flow`.
+
+## Basic Flow
+
+```python
+from agent_core import Agent, CallableNode, Flow
+
+def classify(payload: dict) -> tuple[str, dict]:
+    return "question" if payload["text"].endswith("?") else "statement", payload
+
+def answer(payload: dict) -> dict:
+    payload["answer"] = "received"
+    return payload
+
+start = CallableNode(classify)
+answer_node = CallableNode(answer)
+
+start - "question" >> answer_node
+start - "statement" >> answer_node
+
+result = Agent(Flow(start)).run({"text": "Hello?"})
+print(result.payload["answer"])
+```
+
+## Tools
+
+```python
+from typing import Annotated, Literal
+
+from agent_core import tool
+
+@tool(description="Look up demo weather for a supported city.")
+def get_weather(
+    city: Annotated[Literal["Shanghai", "Tokyo"], "English city name."],
+) -> dict[str, str]:
+    return {"city": city, "condition": "sunny"}
+```
+
+The tool schema is derived from the function signature, type annotations, and `Annotated` descriptions.
+
+## Runtime Events
+
+Every flow run returns a context:
+
+```python
+result = agent.run({"history": []})
+events = [event.to_dict() for event in result.context.events]
+messages = result.context.messages
+```
+
+Nodes can also emit events while running:
+
+```python
+from agent_core import get_current_context
+
+context = get_current_context()
+if context is not None:
+    context.emit("custom.event", category="custom", data={"ok": True})
+```
+
+## Validation
+
+```powershell
+uv run python -m unittest discover -s tests
+uv run python -m compileall src tests examples
+```

@@ -1,6 +1,8 @@
 # Agent Core Runtime
 
-Agent Core Runtime 是一个轻量级 Python agent runtime，用显式、可组合的 `Node` 和 `Flow` 来搭建 agent。它内置了 OpenAI-compatible 的模型适配器，所以 clone 后只要在本地 `.env` 填 key，就可以直接跑真实模型示例。
+[English README](README.md)
+
+Agent Core Runtime 是一个轻量级 Python agent runtime，用显式、可组合的 `Node` 和 `Flow` 搭建 agent。它内置了 OpenAI-compatible 模型适配器，所以 clone 后只要在本地 `.env` 填好 key，就可以直接跑真实模型示例。
 
 ## 提供什么
 
@@ -71,7 +73,7 @@ flowchart LR
     B -->|"没有 tool_calls"| E["最终回答"]
 ```
 
-常见的工具 agent 可以直接用 `build_tool_agent_flow(...)` 搭出来，不需要手动连接每个节点。
+常见的工具 agent 可以直接用 `build_tool_agent_flow(...)` 搭出来，不需要手动连接每一个节点。
 
 ## 项目结构
 
@@ -84,12 +86,11 @@ src/agent_core/
   nodes/                # 可复用 agent-loop 节点
   tools/                # Tool 装饰器、执行器、文件工具、工具调用节点
 examples/
-  basic_flow.py         # 最小 action routing
-  tool_chatbot.py       # 本地 fake model 工具回路
-  01_basic_agent.py     # 真实模型，无工具
-  02_custom_prompt.py   # 真实模型，自定义 system prompt
-  03_custom_tool.py     # 工具定义和 schema 生成
-  04_tool_agent.py      # 真实模型 + 工具调用
+  01_basic_agent.py     # 纯 Node/Flow action routing
+  02_custom_prompt.py   # 真实模型，展示 ModelNode 和 RunContext
+  03_custom_tool.py     # @tool schema 生成和 ToolExecutor
+  04_tool_agent.py      # 真实模型 + ToolRouterNode + ToolCallNode 回路
+  _openai_compatible.py # 示例共享 helper，不是公开 API
 tests/                  # runtime 单元测试
 ```
 
@@ -114,6 +115,24 @@ OPENAI_MODEL=deepseek-v4-flash
 
 `.env` 已被 Git 忽略，不会提交到仓库。
 
+## 示例顺序
+
+示例按从小到完整排列：
+
+```powershell
+uv run python examples/01_basic_agent.py
+uv run python examples/02_custom_prompt.py
+uv run python examples/03_custom_tool.py
+uv run python examples/04_tool_agent.py --trace
+```
+
+这组 case 的顺序是：
+
+- `01_basic_agent.py`：不需要 LLM，只展示 `CallableNode`、分支 action、`Flow` 和 trace。
+- `02_custom_prompt.py`：通过 `ModelNode` 真实调用模型，messages 从 payload 构建，事件进入 `RunContext`。
+- `03_custom_tool.py`：Python 函数变成 `Tool`，导出 OpenAI-compatible schema，并通过 `ToolExecutor` 执行。
+- `04_tool_agent.py`：使用 `build_tool_agent_flow` 搭出完整的 model-tool-model 回路。
+
 ## 基础 Flow
 
 ```python
@@ -135,25 +154,6 @@ start - "statement" >> answer_node
 result = Agent(Flow(start)).run({"text": "Hello?"})
 print(result.payload["answer"])
 ```
-
-运行：
-
-```powershell
-uv run python examples/basic_flow.py
-```
-
-## 真实模型示例
-
-示例按从简单到完整排列：
-
-```powershell
-uv run python examples/01_basic_agent.py
-uv run python examples/02_custom_prompt.py
-uv run python examples/03_custom_tool.py
-uv run python examples/04_tool_agent.py
-```
-
-内置的 `agent_core.build_model_from_env()` 会从 `.env` 创建 OpenAI-compatible 的 `ChatModel`。
 
 ## 工具定义
 
@@ -197,4 +197,3 @@ if context is not None:
 uv run python -m unittest discover -s tests
 uv run python -m compileall src tests examples
 ```
-
