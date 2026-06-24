@@ -1,7 +1,7 @@
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, ModelNode, ToolRouterNode, build_tool_agent_flow, tool
+from agent_core import Agent, ModelNode, ToolRouterNode, tool
 from agent_core.core import Flow
 
 
@@ -97,7 +97,7 @@ class LlmNodeTests(unittest.TestCase):
             ["hel", "lo"],
         )
 
-    def test_build_tool_agent_flow_runs_tool_loop(self) -> None:
+    def test_agent_runs_default_tool_loop(self) -> None:
         model = FakeChatModel(
             [
                 {
@@ -121,15 +121,15 @@ class LlmNodeTests(unittest.TestCase):
             ]
         )
         agent = Agent(
-            build_tool_agent_flow(
-                model=model,
-                messages=build_messages,
-                tools=[get_weather],
-                chat_kwargs={"tool_choice": "auto"},
-            )
+            model=model,
+            tools=[get_weather],
+            chat_kwargs={"tool_choice": "auto"},
         )
+        context = agent.new_context()
+        context.add_message("system", "Use tools when useful.")
+        context.add_message("user", "Shanghai weather?")
 
-        result = agent.run({"history": [{"role": "user", "content": "Shanghai weather?"}]})
+        result = agent.run({}, context=context)
 
         self.assertEqual(result.payload["answer"], "Shanghai is sunny.")
         self.assertEqual(
@@ -141,9 +141,9 @@ class LlmNodeTests(unittest.TestCase):
         self.assertIn('"condition": "sunny"', model.requests[1]["messages"][-1]["content"])
         self.assertEqual(
             [message["role"] for message in result.context.messages],
-            ["assistant", "tool", "assistant"],
+            ["system", "user", "assistant", "tool", "assistant"],
         )
-        self.assertIn("tool_calls", result.context.messages[0])
+        self.assertIn("tool_calls", result.context.messages[2])
         self.assertNotIn("tool_calls", result.context.messages[-1])
         self.assertEqual(
             [event.type for event in result.context.events if event.category == "tool"],

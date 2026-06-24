@@ -2,7 +2,7 @@
 
 `agent_core` is a generic runtime package. It should not contain application pipelines, domain prompts, domain tools, web UI code, or storage choices.
 
-The package does include a small OpenAI-compatible adapter because most users expect a cloned runtime to run after they add an API key. The adapter lives in `agent_core.llm` and stays thin: it converts messages, tools, streaming deltas, and usage into plain dictionaries.
+The package includes a small OpenAI-compatible `LLM` because most users expect a cloned runtime to run after they add an API key. `LLM` loads `.env` directly and stays thin: it converts messages, tools, streaming deltas, and usage into plain dictionaries.
 
 ## Runtime Model
 

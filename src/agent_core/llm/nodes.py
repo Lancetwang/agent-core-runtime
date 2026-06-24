@@ -5,7 +5,7 @@ from typing import Any
 
 from agent_core.core import ExecResult, Flow, Node, Payload
 from agent_core.core.context import get_current_context
-from agent_core.llm.models import ChatModel, Message
+from agent_core.llm.client import ChatModel, LLM, Message
 from agent_core.tools import Tool, ToolCallNode, ToolExecutor
 
 MessageBuilder = Callable[[Payload], Sequence[Message]]
@@ -17,7 +17,7 @@ class ModelNode(Node):
     def __init__(
         self,
         *,
-        model: ChatModel,
+        model: ChatModel | None = None,
         messages: MessageBuilder | None = None,
         tools: ToolProvider | None = None,
         assistant_key: str = "assistant_message",
@@ -28,7 +28,7 @@ class ModelNode(Node):
         append_message: bool = True,
     ) -> None:
         super().__init__()
-        self.model = model
+        self.model = model or LLM()
         self.messages = messages
         self.tools = tools
         self.assistant_key = assistant_key
@@ -129,9 +129,9 @@ class ToolRouterNode(Node):
         return action, state
 
 
-def build_tool_agent_flow(
+def _minimal_agent_loop(
     *,
-    model: ChatModel,
+    model: ChatModel | None = None,
     messages: MessageBuilder | None = None,
     tools: Sequence[Tool],
     chat_kwargs: Mapping[str, Any] | None = None,

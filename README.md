@@ -13,7 +13,7 @@ The runtime is meant to be easy to read and easy to replace:
 - `Agent` is also a `Node`, so an agent can run alone or sit inside a larger flow.
 - `RunContext` carries messages, events, metadata, and artifacts for one run.
 - `@tool` turns typed Python functions into OpenAI-compatible tool schemas.
-- `OpenAICompatibleChatModel` is a thin adapter around the OpenAI SDK.
+- `LLM` is the default OpenAI-compatible model. It loads `.env` by itself.
 
 You can build a normal chat agent in one declaration, or wire your own flow when the loop needs custom logic.
 
@@ -52,14 +52,14 @@ flowchart TD
 src/agent_core/
   agent.py              # Agent: direct chat runner and embeddable Node
   core/                 # Node, Flow, RunContext, trace events
-  llm/                  # ChatModel protocol, ModelNode, router, OpenAI adapter
+  llm/                  # LLM, ChatModel protocol, ModelNode, router
   tools/                # @tool, ToolExecutor, ToolCallNode, file tools
 examples/
   01_basic_agent.py     # Node and Flow only
   02_custom_prompt.py   # Real model call with a custom prompt
   03_custom_tool.py     # Tool schema and execution
   04_tool_agent.py      # Manually wired model-tool-model loop
-  05_custom_agent.py    # Direct Agent(model, instructions, tools)
+  05_custom_agent.py    # Direct Agent(instructions, tools)
 tests/
 ```
 
@@ -70,19 +70,17 @@ uv sync
 Copy-Item .env.example .env
 ```
 
-Set one of these in `.env`:
+Set this in `.env`:
 
 ```text
-OPENAI_API_KEY=...
-# or
-DEEPSEEK_API_KEY=...
+LLM_API_KEY=...
 ```
 
 Defaults target DeepSeek:
 
 ```text
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
 ```
 
 `.env` is ignored by Git.
@@ -92,14 +90,13 @@ OPENAI_MODEL=deepseek-v4-flash
 ```python
 from typing import Annotated
 
-from agent_core import Agent, build_model_from_env, tool
+from agent_core import Agent, tool
 
 @tool(description="Search private notes.")
 def search_notes(topic: Annotated[str, "Topic to search."]) -> dict[str, str]:
     return {"topic": topic, "result": "mock note"}
 
 agent = Agent(
-    model=build_model_from_env(),
     instructions="You are a concise research assistant.",
     tools=[search_notes],
     chat_kwargs={"tool_choice": "auto"},

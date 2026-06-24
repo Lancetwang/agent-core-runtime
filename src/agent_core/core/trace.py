@@ -95,10 +95,6 @@ class TraceRecorder:
         if self.options.print_to_console:
             self.options.printer(format_trace_event(trace_event))
 
-    def to_dicts(self) -> list[dict[str, Any]]:
-        return [event.to_dict() for event in self.events]
-
-
 _CURRENT_TRACE_RECORDER: ContextVar[TraceRecorder | None] = ContextVar(
     "agent_core_trace_recorder",
     default=None,
@@ -136,11 +132,6 @@ def get_trace_recorder(payload: Any, trace_key: str = TRACE_KEY) -> TraceRecorde
         if isinstance(value, TraceRecorder):
             return value
     return None
-
-
-def clear_trace_recorder(payload: Any, trace_key: str = TRACE_KEY) -> None:
-    if isinstance(payload, dict):
-        payload.pop(trace_key, None)
 
 
 def set_current_trace_recorder(recorder: TraceRecorder) -> Token[TraceRecorder | None]:

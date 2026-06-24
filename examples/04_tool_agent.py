@@ -14,7 +14,6 @@ from agent_core import (
     ToolCallNode,
     ToolExecutor,
     ToolRouterNode,
-    build_model_from_env,
     tool,
 )
 
@@ -66,7 +65,6 @@ def build_context() -> RunContext:
 def build_agent() -> Agent:
     tools = [get_weather, tell_joke]
     model_node = ModelNode(
-        model=build_model_from_env(),
         messages=None,
         tools=tools,
         action="route",

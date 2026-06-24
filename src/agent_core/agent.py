@@ -14,7 +14,8 @@ from agent_core.core import (
     TraceOptions,
     get_current_context,
 )
-from agent_core.llm import ChatModel, build_tool_agent_flow
+from agent_core.llm import ChatModel
+from agent_core.llm.nodes import _minimal_agent_loop
 from agent_core.tools import Tool
 
 
@@ -34,9 +35,7 @@ class Agent(Node):
     ) -> None:
         super().__init__(max_retries=max_retries, wait=wait)
         if flow is None:
-            if model is None:
-                raise ValueError("Agent requires either a flow or a model.")
-            flow = build_tool_agent_flow(
+            flow = _minimal_agent_loop(
                 model=model,
                 tools=list(tools or []),
                 chat_kwargs=chat_kwargs,

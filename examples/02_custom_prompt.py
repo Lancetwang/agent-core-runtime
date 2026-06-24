@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from agent_core import Agent, Flow, ModelNode, RunContext, build_model_from_env, make_trace_options
+from agent_core import Agent, Flow, ModelNode, RunContext, make_trace_options
 
 
 SYSTEM_PROMPT = (
@@ -20,7 +20,6 @@ def build_messages(payload: dict) -> list[dict[str, str]]:
 
 def build_agent() -> Agent:
     model_node = ModelNode(
-        model=build_model_from_env(),
         messages=build_messages,
         chat_kwargs={"temperature": 0.2, "max_tokens": 220},
     )

@@ -1,7 +1,8 @@
+import os
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, CallableNode, Flow, ModelNode, Node, Tool, ToolRouterNode, tool
+from agent_core import Agent, CallableNode, Flow, ModelNode, Node, ToolRouterNode, tool
 
 
 class AgentCorePackageTests(unittest.TestCase):
@@ -162,6 +163,19 @@ class AgentCorePackageTests(unittest.TestCase):
         agent = Agent(model=FakeChatModel())
 
         self.assertEqual(agent.chat("hello"), "saw hello")
+
+    def test_agent_can_use_default_env_llm(self) -> None:
+        previous = os.environ.get("LLM_API_KEY")
+        os.environ["LLM_API_KEY"] = "test"
+        try:
+            agent = Agent(instructions="Use the default env-backed LLM.")
+        finally:
+            if previous is None:
+                os.environ.pop("LLM_API_KEY", None)
+            else:
+                os.environ["LLM_API_KEY"] = previous
+
+        self.assertEqual(agent.flow.start.__class__.__name__, "ModelNode")
 
 
 if __name__ == "__main__":

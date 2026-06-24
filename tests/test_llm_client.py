@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from agent_core import OpenAICompatibleChatModel
+from agent_core import LLM
 
 
 class FakeCompletions:
@@ -19,7 +19,7 @@ class FakeClient:
         self.chat = SimpleNamespace(completions=FakeCompletions(response))
 
 
-class OpenAICompatibleChatModelTests(unittest.TestCase):
+class LLMTests(unittest.TestCase):
     def test_chat_message_returns_openai_style_message(self) -> None:
         tool_call = {
             "id": "call_1",
@@ -44,7 +44,7 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
             ),
         )
         client = FakeClient(response)
-        model = OpenAICompatibleChatModel(
+        model = LLM(
             api_key="test",
             base_url="https://api.example.com",
             model="demo-model",
@@ -65,7 +65,7 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
         self.assertEqual(client.chat.completions.last_request["tool_choice"], "auto")
         self.assertEqual(client.chat.completions.last_request["temperature"], 0)
 
-    def test_default_extra_body_is_sent(self) -> None:
+    def test_extra_body_is_sent(self) -> None:
         response = SimpleNamespace(
             choices=[
                 SimpleNamespace(
@@ -75,12 +75,12 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
             usage=None,
         )
         client = FakeClient(response)
-        model = OpenAICompatibleChatModel(
+        model = LLM(
             api_key="test",
             base_url="https://api.deepseek.com",
             model="demo-model",
             client=client,
-            default_extra_body={"thinking": {"type": "disabled"}},
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
         message = model.chat_message([{"role": "user", "content": "hello"}])
@@ -115,7 +115,7 @@ class OpenAICompatibleChatModelTests(unittest.TestCase):
             ),
         ]
         client = FakeClient(chunks)
-        model = OpenAICompatibleChatModel(
+        model = LLM(
             api_key="test",
             base_url="https://api.example.com",
             model="demo-model",
