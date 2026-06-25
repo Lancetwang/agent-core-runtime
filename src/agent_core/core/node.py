@@ -20,8 +20,7 @@ from agent_core.core.trace import (
 )
 
 Action = str
-Payload = Any
-ExecResult = tuple[Action, Payload]
+ExecResult = tuple[Action, Any]
 
 
 class FlowError(RuntimeError):
@@ -37,10 +36,10 @@ class Node:
         self.max_retries = max_retries
         self.wait = wait
 
-    def exec(self, payload: Payload) -> ExecResult:
+    def exec(self, payload: Any) -> ExecResult:
         raise NotImplementedError
 
-    def _exec(self, payload: Payload) -> ExecResult:
+    def _exec(self, payload: Any) -> ExecResult:
         for attempt in range(self.max_retries):
             try:
                 return self.exec(payload)
@@ -66,7 +65,7 @@ class Node:
 class CallableNode(Node):
     def __init__(
         self,
-        fn: Callable[[Payload], ExecResult | Payload],
+        fn: Callable[[Any], ExecResult | Any],
         *,
         max_retries: int = 1,
         wait: float = 0,
@@ -74,7 +73,7 @@ class CallableNode(Node):
         super().__init__(max_retries=max_retries, wait=wait)
         self.fn = fn
 
-    def exec(self, payload: Payload) -> ExecResult:
+    def exec(self, payload: Any) -> ExecResult:
         result = self.fn(payload)
         if self._is_exec_result(result):
             return result
@@ -92,7 +91,7 @@ class CallableNode(Node):
 @dataclass(frozen=True)
 class FlowRunResult:
     action: Action | None
-    payload: Payload
+    payload: Any
     path: list[str]
     trace: list[TraceEvent] = field(default_factory=list)
     context: RunContext | None = None

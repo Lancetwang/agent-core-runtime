@@ -147,7 +147,7 @@ class LlmNodeTests(unittest.TestCase):
         self.assertNotIn("tool_calls", result.context.messages[-1])
         self.assertEqual(
             [event.type for event in result.context.events if event.category == "tool"],
-            ["tool.route", "tool.call", "tool.result", "tool.route"],
+            ["tool.observe", "tool.call", "tool.result", "tool.observe"],
         )
 
 

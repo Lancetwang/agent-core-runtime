@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from agent_core.core import ExecResult, Flow, Node, Payload
+from agent_core.core import ExecResult, Flow, Node
 from agent_core.core.context import get_current_context
 from agent_core.llm.client import ChatModel, LLM, Message
 from agent_core.tools import Tool, ToolCallNode, ToolExecutor
 
-MessageBuilder = Callable[[Payload], Sequence[Message]]
+MessageBuilder = Callable[[Any], Sequence[Message]]
 ToolSpec = Tool | Mapping[str, Any]
-ToolProvider = Callable[[Payload], Sequence[ToolSpec]] | Sequence[ToolSpec]
+ToolProvider = Callable[[Any], Sequence[ToolSpec]] | Sequence[ToolSpec]
 
 
 class ModelNode(Node):
@@ -38,7 +38,7 @@ class ModelNode(Node):
         self.chat_kwargs_key = chat_kwargs_key
         self.append_message = append_message
 
-    def exec(self, payload: Payload) -> ExecResult:
+    def exec(self, payload: Any) -> ExecResult:
         state = dict(payload or {})
         context = get_current_context()
         messages = self._messages(state)
@@ -76,7 +76,11 @@ class ModelNode(Node):
         if self.messages:
             return list(self.messages(state))
         context = get_current_context()
-        return list(context.messages if context and context.messages else state.get(self.messages_key, []))
+        if context:
+            scoped_messages = context.get_messages()
+            if scoped_messages:
+                return list(scoped_messages)
+        return list(state.get(self.messages_key, []))
 
     def _tools(self, state: dict[str, Any]) -> list[Mapping[str, Any]]:
         if self.tools is None:
@@ -110,7 +114,7 @@ class ToolRouterNode(Node):
         self.tool_action = tool_action
         self.done_action = done_action
 
-    def exec(self, payload: Payload) -> ExecResult:
+    def exec(self, payload: Any) -> ExecResult:
         state = dict(payload or {})
         message = state.get(self.assistant_key, {})
         tool_calls = message.get("tool_calls") if isinstance(message, dict) else None
@@ -121,7 +125,7 @@ class ToolRouterNode(Node):
             state[self.output_key] = message.get("content", "")
         if context:
             context.emit(
-                "tool.route",
+                "tool.observe",
                 category="tool",
                 action=action,
                 data={"tool_call_count": len(tool_calls or [])},
@@ -139,13 +143,14 @@ def _minimal_agent_loop(
     messages_key: str = "history",
     output_key: str = "answer",
 ) -> Flow:
+    chat_kwargs = {"stream": True, **dict(chat_kwargs or {})}
     model_node = ModelNode(
         model=model,
         messages=messages,
         tools=tools,
         assistant_key=assistant_key,
         messages_key=messages_key,
-        action="route",
+        action="observe",
         chat_kwargs=chat_kwargs,
     )
     router_node = ToolRouterNode(
@@ -161,7 +166,7 @@ def _minimal_agent_loop(
         next_action="chat",
     )
 
-    model_node - "route" >> router_node
+    model_node - "observe" >> router_node
     router_node - "tool_call" >> tool_node
     tool_node - "chat" >> model_node
     return Flow(model_node)

@@ -1,6 +1,6 @@
 from typing import Any
 
-from agent_core.core import ExecResult, Node, Payload
+from agent_core.core import ExecResult, Node
 from agent_core.core.context import get_current_context
 from agent_core.core.trace import get_trace_recorder
 from agent_core.tools.executor import ToolExecutor
@@ -23,7 +23,7 @@ class ToolCallNode(Node):
         self.results_key = results_key
         self.next_action = next_action
 
-    def exec(self, payload: Payload) -> ExecResult:
+    def exec(self, payload: Any) -> ExecResult:
         state: dict[str, Any] = dict(payload or {})
         assistant_message = state.get(self.assistant_key, {})
         tool_calls = self.executor.parse_tool_calls(assistant_message)

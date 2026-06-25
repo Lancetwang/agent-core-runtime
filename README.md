@@ -27,8 +27,8 @@ flowchart TD
     Agent -->|"custom"| Flow["Flow"]
     Agent -. "Agent is a Node" .-> OuterFlow["Another Flow"]
 
-    Flow --> Payload["payload"]
-    Payload --> Node["Node"]
+    Flow --> Data["payload"]
+    Data --> Node["Node"]
     Node -->|"action + payload"| Next["Next Node"]
     Next --> Node
 
@@ -101,6 +101,7 @@ def search_notes(topic: Annotated[str, "Topic to search."]) -> dict[str, str]:
 agent = Agent(
     instructions="You are a concise research assistant.",
     tools=[search_notes],
+    stream=True,
     chat_kwargs={"tool_choice": "auto"},
 )
 
@@ -139,11 +140,11 @@ Because `Agent` is a `Node`, you can compose agents:
 researcher = Agent(model=model, instructions="Research.", tools=[search_notes])
 writer = Agent(model=model, instructions="Write the final response.")
 
-researcher >> writer
+researcher - "final" >> writer
 team = Agent(Flow(researcher))
 ```
 
-Use `Agent(flow, action=None)` when a sub-agent should expose the final action from its inner flow instead of always returning `"default"`.
+When an `Agent` is used as a node, it exposes the final action from its inner flow. Pass `action="some_action"` only when you want to force a fixed outward action.
 
 ## Examples
 
@@ -161,6 +162,8 @@ uv run python examples/05_custom_agent.py
 
 - `--stream`: stream the final assistant response.
 - `--context summary|messages|events|artifacts|all|none`: inspect the run context.
+
+`05_custom_agent.py` streams by default. Pass `--no-stream` to print full responses after completion. In your own agent, use `Agent(..., stream=False)` to disable streaming by default, or override one call with `agent.chat(..., stream=False)`.
 
 ## Runtime Events
 
@@ -182,7 +185,9 @@ if context:
     context.set_artifact("note", "saved")
 ```
 
-Keep business state in `payload` and runtime/session data in `RunContext`. For example, a router decision or report draft belongs in `result.payload`; streamed model deltas, messages, UI events, and artifacts belong in `result.context`.
+Keep business state in `payload` and runtime/session data in `RunContext`. For example, a router decision, plan, or artifact path belongs in `result.payload`; streamed model deltas, messages, UI events, and artifact metadata belong in `result.context`. Large artifacts such as full reports should live in files, databases, or object storage, with payload/context carrying references rather than the full content.
+
+In multi-agent flows, `RunContext` is shared for events, artifacts, and metadata, but each `Agent` gets an isolated message scope for LLM input. This keeps the observable run unified without leaking one agent's prompt/history into another agent's model call.
 
 ## Validate
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from collections.abc import Callable, Mapping
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
@@ -45,6 +46,8 @@ class RunContext:
 
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    message_scopes: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    active_message_scope: str | None = None
     artifacts: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     events: list[AgentEvent] = field(default_factory=list)
@@ -86,14 +89,32 @@ class RunContext:
         return event
 
     def add_message(self, role: str, content: str, **extra: Any) -> dict[str, Any]:
+        scope = extra.pop("scope", self.active_message_scope)
         message = {"role": role, "content": content, **extra}
         self.messages.append(message)
+        if scope is not None:
+            self.message_scopes.setdefault(scope, []).append(message)
         self.emit(
             "message.add",
             category="message",
-            data={"role": role, "content": content, **extra},
+            data={"role": role, "content": content, "scope": scope, **extra},
         )
         return message
+
+    def get_messages(self, scope: str | None = None) -> list[dict[str, Any]]:
+        scope = self.active_message_scope if scope is None else scope
+        if scope is None:
+            return self.messages
+        return self.message_scopes.setdefault(scope, [])
+
+    @contextmanager
+    def use_message_scope(self, scope: str):
+        previous = self.active_message_scope
+        self.active_message_scope = scope
+        try:
+            yield
+        finally:
+            self.active_message_scope = previous
 
     def set_artifact(self, name: str, value: Any) -> None:
         self.artifacts[name] = value
@@ -103,6 +124,11 @@ class RunContext:
         return {
             "run_id": self.run_id,
             "messages": list(self.messages),
+            "message_scopes": {
+                name: list(messages)
+                for name, messages in self.message_scopes.items()
+            },
+            "active_message_scope": self.active_message_scope,
             "artifacts": dict(self.artifacts),
             "metadata": dict(self.metadata),
             "events": [event.to_dict() for event in self.events],

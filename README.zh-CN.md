@@ -27,8 +27,8 @@ flowchart TD
     Agent -->|"自定义"| Flow["Flow"]
     Agent -. "Agent 也是 Node" .-> OuterFlow["另一个 Flow"]
 
-    Flow --> Payload["payload"]
-    Payload --> Node["Node"]
+    Flow --> Data["payload"]
+    Data --> Node["Node"]
     Node -->|"action + payload"| Next["下一个 Node"]
     Next --> Node
 
@@ -101,6 +101,7 @@ def search_notes(topic: Annotated[str, "Topic to search."]) -> dict[str, str]:
 agent = Agent(
     instructions="You are a concise research assistant.",
     tools=[search_notes],
+    stream=True,
     chat_kwargs={"tool_choice": "auto"},
 )
 
@@ -139,11 +140,11 @@ print(result.payload["answer"])
 researcher = Agent(model=model, instructions="Research.", tools=[search_notes])
 writer = Agent(model=model, instructions="Write the final response.")
 
-researcher >> writer
+researcher - "final" >> writer
 team = Agent(Flow(researcher))
 ```
 
-如果希望子 agent 把内部 flow 的最终 action 透传给外层 flow，可以使用 `Agent(flow, action=None)`。
+当 `Agent` 作为节点使用时，它默认会把内部 flow 的最终 action 暴露给外层 flow。只有当你希望它固定返回某个外部 action 时，才需要传 `action="some_action"`。
 
 ## 示例
 
@@ -161,6 +162,8 @@ uv run python examples/05_custom_agent.py
 
 - `--stream`：流式输出最终 assistant 回复。
 - `--context summary|messages|events|artifacts|all|none`：查看运行上下文。
+
+`05_custom_agent.py` 默认流式输出。传入 `--no-stream` 可以切换为完整回复结束后再打印。你自己的 agent 可以用 `Agent(..., stream=False)` 默认关闭流式，也可以用 `agent.chat(..., stream=False)` 单次覆盖。
 
 ## Runtime Events
 
@@ -182,7 +185,9 @@ if context:
     context.set_artifact("note", "saved")
 ```
 
-保持一个清晰边界：业务状态放在 `payload`，运行/会话数据放在 `RunContext`。例如 router decision、plan、report draft 这类内容应该从 `result.payload` 获取；流式 delta、messages、UI events、artifacts 则放在 `result.context`。
+保持一个清晰边界：业务状态放在 `payload`，运行/会话数据放在 `RunContext`。例如 router decision、plan、artifact path 这类内容应该从 `result.payload` 获取；流式 delta、messages、UI events、artifact metadata 则放在 `result.context`。完整报告、PDF、长日志这类大产物应该放在文件、数据库或对象存储里，payload/context 只保留路径、ID、摘要或元数据。
+
+在多 agent flow 里，`RunContext` 会共享 events、artifacts 和 metadata，但每个 `Agent` 都有自己隔离的 message scope 作为 LLM 输入。这样前端/日志仍然能看到统一运行过程，但一个 agent 的 prompt/history 不会泄露到另一个 agent 的模型调用里。
 
 ## 验证
 

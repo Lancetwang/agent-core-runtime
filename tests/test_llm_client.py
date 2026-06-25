@@ -134,6 +134,97 @@ class LLMTests(unittest.TestCase):
         self.assertNotIn("tool_calls", message)
         self.assertTrue(client.chat.completions.last_request["stream"])
 
+    def test_streaming_chat_message_preserves_tool_calls(self) -> None:
+        chunks = [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content="",
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call_1",
+                                    type="function",
+                                    function=SimpleNamespace(
+                                        name="get_weather",
+                                        arguments="",
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id=None,
+                                    type=None,
+                                    function=SimpleNamespace(
+                                        name=None,
+                                        arguments='{"city": "Bei',
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id=None,
+                                    type=None,
+                                    function=SimpleNamespace(
+                                        name=None,
+                                        arguments='jing"}',
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+        ]
+        client = FakeClient(chunks)
+        model = LLM(
+            api_key="test",
+            base_url="https://api.example.com",
+            model="demo-model",
+            client=client,
+        )
+
+        message = model.chat_message(
+            [{"role": "user", "content": "weather"}],
+            tools=[{"type": "function", "function": {"name": "get_weather"}}],
+            stream=True,
+        )
+
+        self.assertEqual(
+            message["tool_calls"],
+            [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": '{"city": "Beijing"}',
+                    },
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

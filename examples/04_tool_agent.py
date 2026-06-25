@@ -67,7 +67,7 @@ def build_agent() -> Agent:
     model_node = ModelNode(
         messages=None,
         tools=tools,
-        action="route",
+        action="observe",
         chat_kwargs={"temperature": 0.2, "max_tokens": 500, "tool_choice": "auto"},
     )
     router_node = ToolRouterNode(tool_action="tool_call", done_action="final")
@@ -77,7 +77,7 @@ def build_agent() -> Agent:
     )
     prepare_final_node = CallableNode(prepare_final_response)
 
-    model_node - "route" >> router_node
+    model_node - "observe" >> router_node
     router_node - "tool_call" >> tool_node
     tool_node - "prepare_final" >> prepare_final_node
     prepare_final_node - "chat" >> model_node

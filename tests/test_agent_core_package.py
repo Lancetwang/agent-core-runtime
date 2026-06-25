@@ -105,7 +105,6 @@ class AgentCorePackageTests(unittest.TestCase):
     def test_agent_can_preserve_inner_flow_action(self) -> None:
         inner_agent = Agent(
             Flow(CallableNode(lambda payload: ("special", payload))),
-            action=None,
         )
         target = CallableNode(lambda payload: {"ok": True})
         inner_agent - "special" >> target
@@ -116,10 +115,13 @@ class AgentCorePackageTests(unittest.TestCase):
         self.assertEqual(result.payload["ok"], True)
         self.assertEqual(result.path, ["Agent", "CallableNode"])
 
+    def test_agent_rejects_none_action(self) -> None:
+        with self.assertRaises(TypeError):
+            Agent(Flow(CallableNode(lambda payload: payload)), action=None)
+
     def test_nested_agent_flow_inherits_trace(self) -> None:
         inner_agent = Agent(
             Flow(CallableNode(lambda payload: ("done", payload))),
-            action=None,
         )
 
         result = Flow(inner_agent).run({}, trace=True)
@@ -155,6 +157,30 @@ class AgentCorePackageTests(unittest.TestCase):
         self.assertEqual(result.payload["seen"], ["first", "second"])
         self.assertEqual(system_messages, ["First role.", "Second role."])
 
+    def test_nested_chat_agents_use_isolated_message_scopes(self) -> None:
+        class FakeChatModel:
+            def __init__(self, content: str) -> None:
+                self.content = content
+                self.requests = []
+
+            def chat_message(self, messages, *, tools=None, tool_choice=None, **kwargs):
+                self.requests.append(list(messages))
+                return {"role": "assistant", "content": self.content}
+
+        first_model = FakeChatModel("first answer")
+        second_model = FakeChatModel("second answer")
+        first = Agent(model=first_model, instructions="First role.")
+        second = Agent(model=second_model, instructions="Second role.")
+        first - "final" >> second
+
+        result = Flow(first).run({})
+
+        self.assertEqual(result.path, ["Agent", "Agent"])
+        self.assertEqual([message["content"] for message in first_model.requests[0]], ["First role."])
+        self.assertEqual([message["content"] for message in second_model.requests[0]], ["Second role."])
+        self.assertNotIn("First role.", [message["content"] for message in second_model.requests[0]])
+        self.assertEqual(len(result.context.message_scopes), 2)
+
     def test_chat_works_without_instructions(self) -> None:
         class FakeChatModel:
             def chat_message(self, messages, *, tools=None, tool_choice=None, **kwargs):
@@ -163,6 +189,42 @@ class AgentCorePackageTests(unittest.TestCase):
         agent = Agent(model=FakeChatModel())
 
         self.assertEqual(agent.chat("hello"), "saw hello")
+
+    def test_agent_chat_streams_by_default_and_can_be_overridden(self) -> None:
+        class FakeChatModel:
+            def __init__(self) -> None:
+                self.stream_values = []
+
+            def chat_message(self, messages, *, tools=None, tool_choice=None, **kwargs):
+                self.stream_values.append(kwargs.get("stream"))
+                on_delta = kwargs.get("on_delta")
+                if on_delta:
+                    on_delta("hi")
+                return {"role": "assistant", "content": "hi"}
+
+        model = FakeChatModel()
+        deltas = []
+        agent = Agent(model=model)
+
+        self.assertEqual(agent.chat("hello", on_delta=deltas.append), "hi")
+        self.assertEqual(agent.chat("again", stream=False), "hi")
+        self.assertEqual(model.stream_values, [True, False])
+        self.assertEqual(deltas, ["hi"])
+
+    def test_agent_stream_constructor_option(self) -> None:
+        class FakeChatModel:
+            def __init__(self) -> None:
+                self.stream_values = []
+
+            def chat_message(self, messages, *, tools=None, tool_choice=None, **kwargs):
+                self.stream_values.append(kwargs.get("stream"))
+                return {"role": "assistant", "content": "ok"}
+
+        model = FakeChatModel()
+        agent = Agent(model=model, stream=False)
+
+        self.assertEqual(agent.chat("hello"), "ok")
+        self.assertEqual(model.stream_values, [False])
 
     def test_agent_can_use_default_env_llm(self) -> None:
         previous = os.environ.get("LLM_API_KEY")

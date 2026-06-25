@@ -13,7 +13,6 @@ from agent_core.core.node import (
     FlowError,
     FlowRunResult,
     Node,
-    Payload,
 )
 from agent_core.core.trace import (
     TraceEvent,
@@ -32,7 +31,6 @@ __all__ = [
     "FlowError",
     "FlowRunResult",
     "Node",
-    "Payload",
     "RunContext",
     "TraceEvent",
     "TraceOptions",

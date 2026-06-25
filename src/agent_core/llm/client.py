@@ -103,14 +103,50 @@ def _message_to_dict(message: Any, usage: Any = None) -> dict[str, Any]:
 
 def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict[str, Any]:
     parts: list[str] = []
+    tool_calls: dict[int, dict[str, Any]] = {}
     for chunk in chunks:
         for choice in getattr(chunk, "choices", []):
-            text = getattr(getattr(choice, "delta", None), "content", None)
+            delta = getattr(choice, "delta", None)
+            text = _get(delta, "content")
             if text:
                 parts.append(text)
                 if on_delta:
                     on_delta(text)
-    return {"role": "assistant", "content": "".join(parts)}
+            for position, item in enumerate(_get(delta, "tool_calls") or []):
+                _merge_stream_tool_call(tool_calls, item, position)
+
+    message = {"role": "assistant", "content": "".join(parts)}
+    if tool_calls:
+        message["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
+    return message
+
+
+def _merge_stream_tool_call(
+    tool_calls: dict[int, dict[str, Any]],
+    item: Any,
+    fallback_index: int,
+) -> None:
+    index = _get(item, "index", fallback_index)
+    current = tool_calls.setdefault(
+        int(index),
+        {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+    )
+    if item_id := _get(item, "id"):
+        current["id"] = item_id
+    if item_type := _get(item, "type"):
+        current["type"] = item_type
+
+    function = _get(item, "function") or {}
+    if name := _get(function, "name"):
+        current["function"]["name"] += name
+    if arguments := _get(function, "arguments"):
+        current["function"]["arguments"] += arguments
+
+
+def _get(value: Any, name: str, default: Any = None) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
 
 
 def _env(*names: str) -> str | None:
