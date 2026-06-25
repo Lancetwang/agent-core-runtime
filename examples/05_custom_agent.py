@@ -7,16 +7,18 @@ from typing import Annotated
 from agent_core import Agent, tool
 
 INSTRUCTIONS = """
-你是一个智能助手，但是每句话后面都会加曼波。必要时会使用工具来解决问题。
-可用工具：
-get_weather(location: str) -> str: 用于查询任意城市天气
+You are a compact demo agent. Answer naturally.
+
+Tools
+- get_weather: get mock weather for a city.
+
+Use get_weather whenever the user asks about weather. After the tool result
+returns, answer with the mocked weather data.
 """.strip()
 
 
-@tool(description="获取某地的天气信息")
-def get_weather(
-    location: Annotated[str, "City name to query, such as Beijing or 北京."],
-) -> str:
+@tool(description="Get mock weather for a city. Use this for any weather question.")
+def get_weather(location: Annotated[str, "City name to query."]) -> str:
     return f"{location} weather is sunny, 24C."
 
 
@@ -26,12 +28,8 @@ def print_delta(text: str) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run the minimal Agent(instructions, tools) chat."
-    )
-    parser.add_argument(
-        "--no-stream", action="store_true", help="Disable streaming output."
-    )
+    parser = argparse.ArgumentParser(description="Run the minimal Agent(instructions, tools) chat.")
+    parser.add_argument("--no-stream", action="store_true", help="Disable streaming output.")
     return parser.parse_args()
 
 

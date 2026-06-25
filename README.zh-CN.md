@@ -154,16 +154,18 @@ team = Agent(Flow(researcher))
 uv run python examples/01_basic_agent.py
 uv run python examples/02_custom_prompt.py
 uv run python examples/03_custom_tool.py
-uv run python examples/04_tool_agent.py --stream --context messages
+uv run python examples/04_tool_agent.py --context messages
 uv run python examples/05_custom_agent.py
 ```
 
-`04_tool_agent.py` 支持：
+LLM 相关示例默认流式输出。使用 `--no-stream` 可以切换为完整回复结束后再打印。
 
-- `--stream`：流式输出最终 assistant 回复。
+`04_tool_agent.py` 还支持：
+
+- `--interactive`：启动交互式循环。
 - `--context summary|messages|events|artifacts|all|none`：查看运行上下文。
 
-`05_custom_agent.py` 默认流式输出。传入 `--no-stream` 可以切换为完整回复结束后再打印。你自己的 agent 可以用 `Agent(..., stream=False)` 默认关闭流式，也可以用 `agent.chat(..., stream=False)` 单次覆盖。
+你自己的 agent 可以用 `Agent(..., stream=False)` 默认关闭流式，也可以用 `agent.chat(..., stream=False)` 单次覆盖。
 
 ## Runtime Events
 

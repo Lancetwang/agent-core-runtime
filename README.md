@@ -154,16 +154,18 @@ Run the examples in order:
 uv run python examples/01_basic_agent.py
 uv run python examples/02_custom_prompt.py
 uv run python examples/03_custom_tool.py
-uv run python examples/04_tool_agent.py --stream --context messages
+uv run python examples/04_tool_agent.py --context messages
 uv run python examples/05_custom_agent.py
 ```
 
-`04_tool_agent.py` supports:
+LLM examples stream by default. Use `--no-stream` to print full responses after completion.
 
-- `--stream`: stream the final assistant response.
+`04_tool_agent.py` also supports:
+
+- `--interactive`: start an interactive loop.
 - `--context summary|messages|events|artifacts|all|none`: inspect the run context.
 
-`05_custom_agent.py` streams by default. Pass `--no-stream` to print full responses after completion. In your own agent, use `Agent(..., stream=False)` to disable streaming by default, or override one call with `agent.chat(..., stream=False)`.
+In your own agent, use `Agent(..., stream=False)` to disable streaming by default, or override one call with `agent.chat(..., stream=False)`.
 
 ## Runtime Events
 
