@@ -93,11 +93,13 @@ class CoreFlowTests(unittest.TestCase):
 
         self.assertNotIn(TRACE_KEY, payload)
 
-    def test_flow_exposes_run_context_events(self) -> None:
+    def test_flow_exposes_run_context_events_without_mirroring_payload(self) -> None:
         result = Flow(CallableNode(lambda payload: {"ok": True})).run({})
 
         self.assertIsNotNone(result.context)
-        self.assertEqual(result.context.state["ok"], True)
+        self.assertEqual(result.payload["ok"], True)
+        self.assertFalse(hasattr(result.context, "state"))
+        self.assertFalse(hasattr(result.context, "payload"))
         self.assertEqual(
             [event.type for event in result.context.events],
             ["node.start", "node.end", "flow.end"],
@@ -120,7 +122,7 @@ class CoreFlowTests(unittest.TestCase):
 
     def test_flow_can_use_supplied_run_context(self) -> None:
         events = []
-        context = RunContext.from_payload({"seed": 1}, on_event=events.append)
+        context = RunContext(on_event=events.append)
 
         result = Flow(CallableNode(lambda payload: {"answer": payload["seed"] + 1})).run(
             {"seed": 1},
@@ -128,7 +130,7 @@ class CoreFlowTests(unittest.TestCase):
         )
 
         self.assertIs(result.context, context)
-        self.assertEqual(result.context.state["answer"], 2)
+        self.assertEqual(result.payload["answer"], 2)
         self.assertEqual(events[-1].type, "flow.end")
 
 

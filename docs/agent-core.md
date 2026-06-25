@@ -11,7 +11,12 @@ The package includes a small OpenAI-compatible `LLM` because most users expect a
 - `Agent` wraps a flow and is itself a node.
 - `RunContext` belongs to one execution and carries messages, artifacts, metadata, and UI-friendly events.
 
-Plain payload dictionaries are still useful for node-to-node arguments. Agent state that needs to survive across nodes or turns should live in `RunContext`.
+Payload and context are deliberately separate:
+
+- Payload is the explicit business data passed from node to node and returned in `FlowRunResult.payload`.
+- `RunContext` is the runtime surface for conversation messages, emitted events, artifacts, metadata, and current execution position.
+
+Use payload for routing and domain state. Use `RunContext` for things a UI, CLI, logger, or chat session needs to observe or preserve.
 
 ## Built-In Tool Loop
 

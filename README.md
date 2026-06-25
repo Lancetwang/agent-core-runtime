@@ -2,7 +2,7 @@
 
 Agent Core Runtime is a small Python runtime for building tool-using agents from a few explicit pieces: `Node`, `Flow`, `RunContext`, `Tool`, and `Agent`.
 
-[中文 README](README.zh-CN.md)
+[Chinese README](README.zh-CN.md)
 
 ## Why This Exists
 
@@ -12,6 +12,7 @@ The runtime is meant to be easy to read and easy to replace:
 - `Flow` connects nodes by action names.
 - `Agent` is also a `Node`, so an agent can run alone or sit inside a larger flow.
 - `RunContext` carries messages, events, metadata, and artifacts for one run.
+- `payload` carries explicit business data between nodes and is returned by the flow.
 - `@tool` turns typed Python functions into OpenAI-compatible tool schemas.
 - `LLM` is the default OpenAI-compatible model. It loads `.env` by itself.
 
@@ -26,11 +27,12 @@ flowchart TD
     Agent -->|"custom"| Flow["Flow"]
     Agent -. "Agent is a Node" .-> OuterFlow["Another Flow"]
 
-    Flow --> Node["Node"]
-    Node -->|"action"| Next["Next Node"]
+    Flow --> Payload["payload"]
+    Payload --> Node["Node"]
+    Node -->|"action + payload"| Next["Next Node"]
     Next --> Node
 
-    Node --> Context["RunContext"]
+    Flow -. "runtime context" .-> Context["RunContext"]
     Context --> Messages["messages"]
     Context --> Events["events"]
     Context --> Artifacts["artifacts"]
@@ -179,6 +181,8 @@ context = get_current_context()
 if context:
     context.set_artifact("note", "saved")
 ```
+
+Keep business state in `payload` and runtime/session data in `RunContext`. For example, a router decision or report draft belongs in `result.payload`; streamed model deltas, messages, UI events, and artifacts belong in `result.context`.
 
 ## Validate
 

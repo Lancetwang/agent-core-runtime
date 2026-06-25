@@ -113,7 +113,7 @@ class Flow:
         current = self.start
         last_action: Action | None = None
         path: list[str] = []
-        run_context = context or RunContext.from_payload(payload)
+        run_context = context or RunContext()
         inherited_recorder = get_trace_recorder(payload) if trace is None else None
         recorder = inherited_recorder or TraceRecorder(trace)
         context_token = set_current_context(run_context)
@@ -125,7 +125,6 @@ class Flow:
                     recorder.set_context(step=step, node=None)
                     recorder.emit("flow.end", category="flow", step=step, node=None)
                     run_context.set_execution_context(step=step, node=None)
-                    run_context.sync_payload(payload)
                     run_context.emit("flow.end", category="flow", step=step, node=None)
                     return FlowRunResult(
                         action=last_action,
@@ -140,7 +139,6 @@ class Flow:
                 recorder.set_context(step=step, node=node_name)
                 recorder.emit("node.start", category="node")
                 run_context.set_execution_context(step=step, node=node_name)
-                run_context.sync_payload(payload)
                 run_context.emit("node.start", category="node")
                 last_action, payload = current._exec(payload)
                 next_node = current.successors.get(last_action)
@@ -152,7 +150,6 @@ class Flow:
                     action=last_action,
                     data={"next_node": next_node.__class__.__name__ if next_node else None},
                 )
-                run_context.sync_payload(payload)
                 run_context.emit(
                     "node.end",
                     category="node",

@@ -36,16 +36,14 @@ class AgentEvent:
 
 @dataclass
 class RunContext:
-    """State and event stream for one flow execution.
+    """Runtime context and event stream for one flow execution.
 
-    The context is intentionally separate from the payload passed between nodes.
-    Existing payload-based nodes keep working, while richer agent nodes can use
-    the current context for messages, artifacts, metadata, and UI events.
+    Business data moves through ``Node.exec(payload)`` and is returned as the
+    flow result payload. The run context is intentionally separate: it carries
+    conversation messages, artifacts, metadata, and UI/runtime events.
     """
 
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    payload: Any = None
-    state: dict[str, Any] = field(default_factory=dict)
     messages: list[dict[str, Any]] = field(default_factory=list)
     artifacts: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -53,22 +51,6 @@ class RunContext:
     on_event: Callable[[AgentEvent], None] | None = None
     step: int | None = None
     node: str | None = None
-
-    @classmethod
-    def from_payload(
-        cls,
-        payload: Any = None,
-        *,
-        on_event: Callable[[AgentEvent], None] | None = None,
-    ) -> RunContext:
-        context = cls(on_event=on_event)
-        context.sync_payload(payload)
-        return context
-
-    def sync_payload(self, payload: Any) -> None:
-        self.payload = payload
-        if isinstance(payload, dict):
-            self.state = payload
 
     def set_execution_context(
         self,
@@ -120,7 +102,6 @@ class RunContext:
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
-            "state": dict(self.state),
             "messages": list(self.messages),
             "artifacts": dict(self.artifacts),
             "metadata": dict(self.metadata),
