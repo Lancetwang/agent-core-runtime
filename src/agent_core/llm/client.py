@@ -73,6 +73,8 @@ class LLM:
             "stream": stream,
             **kwargs,
         }
+        if stream:
+            request["stream_options"] = {"include_usage": True, **dict(request.get("stream_options") or {})}
         if tools:
             request["tools"] = list(tools)
         if tool_choice is not None:
@@ -97,14 +99,16 @@ def _message_to_dict(message: Any, usage: Any = None) -> dict[str, Any]:
             for item in tool_calls
         ]
     if usage is not None:
-        result["usage"] = usage.model_dump() if hasattr(usage, "model_dump") else usage
+        result["usage"] = _usage_to_dict(usage)
     return result
 
 
 def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict[str, Any]:
     parts: list[str] = []
     tool_calls: dict[int, dict[str, Any]] = {}
+    usage: Any = None
     for chunk in chunks:
+        usage = _get(chunk, "usage", usage)
         for choice in getattr(chunk, "choices", []):
             delta = getattr(choice, "delta", None)
             text = _get(delta, "content")
@@ -118,7 +122,13 @@ def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict
     message = {"role": "assistant", "content": "".join(parts)}
     if tool_calls:
         message["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
+    if usage is not None:
+        message["usage"] = _usage_to_dict(usage)
     return message
+
+
+def _usage_to_dict(usage: Any) -> Any:
+    return usage.model_dump() if hasattr(usage, "model_dump") else usage
 
 
 def _merge_stream_tool_call(

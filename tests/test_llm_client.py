@@ -111,7 +111,14 @@ class LLMTests(unittest.TestCase):
                             tool_calls=[],
                         )
                     )
-                ]
+                ],
+                usage=SimpleNamespace(
+                    model_dump=lambda: {
+                        "prompt_tokens": 4,
+                        "completion_tokens": 3,
+                        "total_tokens": 7,
+                    }
+                ),
             ),
         ]
         client = FakeClient(chunks)
@@ -131,8 +138,10 @@ class LLMTests(unittest.TestCase):
 
         self.assertEqual(message["content"], "Hello world")
         self.assertEqual(deltas, ["Hello", " world"])
+        self.assertEqual(message["usage"]["total_tokens"], 7)
         self.assertNotIn("tool_calls", message)
         self.assertTrue(client.chat.completions.last_request["stream"])
+        self.assertEqual(client.chat.completions.last_request["stream_options"], {"include_usage": True})
 
     def test_streaming_chat_message_preserves_tool_calls(self) -> None:
         chunks = [
