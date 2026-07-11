@@ -1,5 +1,6 @@
 from agent_core.core.context import (
     AgentEvent,
+    RunUsage,
     RunContext,
     get_current_context,
     reset_current_context,
@@ -17,7 +18,6 @@ from agent_core.core.node import (
 from agent_core.core.trace import (
     TraceEvent,
     TraceOptions,
-    TraceRecorder,
     format_trace_event,
     make_trace_options,
 )
@@ -32,9 +32,9 @@ __all__ = [
     "FlowRunResult",
     "Node",
     "RunContext",
+    "RunUsage",
     "TraceEvent",
     "TraceOptions",
-    "TraceRecorder",
     "format_trace_event",
     "get_current_context",
     "make_trace_options",

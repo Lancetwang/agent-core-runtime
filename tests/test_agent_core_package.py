@@ -127,7 +127,7 @@ class AgentCorePackageTests(unittest.TestCase):
         result = Flow(inner_agent).run({}, trace=True)
 
         self.assertEqual(
-            [(event.event, event.node) for event in result.trace if event.category == "node"],
+            [(event.type, event.node) for event in result.trace if event.category == "node"],
             [
                 ("node.start", "Agent"),
                 ("node.start", "CallableNode"),
@@ -228,7 +228,9 @@ class AgentCorePackageTests(unittest.TestCase):
 
     def test_agent_can_use_default_env_llm(self) -> None:
         previous = os.environ.get("LLM_API_KEY")
+        previous_model = os.environ.get("LLM_MODEL")
         os.environ["LLM_API_KEY"] = "test"
+        os.environ["LLM_MODEL"] = "test-model"
         try:
             agent = Agent(instructions="Use the default env-backed LLM.")
         finally:
@@ -236,6 +238,10 @@ class AgentCorePackageTests(unittest.TestCase):
                 os.environ.pop("LLM_API_KEY", None)
             else:
                 os.environ["LLM_API_KEY"] = previous
+            if previous_model is None:
+                os.environ.pop("LLM_MODEL", None)
+            else:
+                os.environ["LLM_MODEL"] = previous_model
 
         self.assertEqual(agent.flow.start.__class__.__name__, "ModelNode")
 

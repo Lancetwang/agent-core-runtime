@@ -61,6 +61,7 @@ class ModelNode(Node):
                 context.add_message("assistant", str(message.get("content", "")), **extra)
 
         if context:
+            context.record_model_usage(message.get("usage"))
             context.emit(
                 "model.response",
                 category="model",

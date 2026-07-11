@@ -9,7 +9,6 @@ from agent_core.core import (
     get_current_context,
     make_trace_options,
 )
-from agent_core.core.trace import TRACE_KEY
 
 
 class CoreFlowTests(unittest.TestCase):
@@ -58,9 +57,8 @@ class CoreFlowTests(unittest.TestCase):
         result = Flow(node).run({}, trace=True)
 
         self.assertEqual(result.path, ["CallableNode"])
-        self.assertNotIn(TRACE_KEY, result.payload)
         self.assertEqual(
-            [event.event for event in result.trace],
+            [event.type for event in result.trace],
             ["node.start", "node.end", "flow.end"],
         )
         self.assertEqual(result.trace[0].step, 1)
@@ -80,18 +78,8 @@ class CoreFlowTests(unittest.TestCase):
 
         Flow(node).run({}, trace=make_trace_options(on_event=events.append))
 
-        self.assertEqual(events[0].event, "node.start")
+        self.assertEqual(events[0].type, "node.start")
         self.assertEqual(events[0].node, "CallableNode")
-
-    def test_flow_trace_does_not_leak_into_original_payload(self) -> None:
-        def copy_payload(payload: dict) -> dict:
-            return {"ok": payload.get("ok")}
-
-        payload = {"ok": True}
-
-        Flow(CallableNode(copy_payload)).run(payload, trace=True)
-
-        self.assertNotIn(TRACE_KEY, payload)
 
     def test_flow_exposes_run_context_events_without_mirroring_payload(self) -> None:
         result = Flow(CallableNode(lambda payload: {"ok": True})).run({})

@@ -7,16 +7,13 @@ import time
 
 from agent_core.core.context import (
     RunContext,
+    RunUsage,
     reset_current_context,
     set_current_context,
 )
 from agent_core.core.trace import (
     TraceEvent,
     TraceOptions,
-    TraceRecorder,
-    get_trace_recorder,
-    reset_current_trace_recorder,
-    set_current_trace_recorder,
 )
 
 Action = str
@@ -95,6 +92,7 @@ class FlowRunResult:
     path: list[str]
     trace: list[TraceEvent] = field(default_factory=list)
     context: RunContext | None = None
+    usage: RunUsage = field(default_factory=RunUsage)
 
 
 class Flow:
@@ -113,42 +111,41 @@ class Flow:
         last_action: Action | None = None
         path: list[str] = []
         run_context = context or RunContext()
-        inherited_recorder = get_trace_recorder(payload) if trace is None else None
-        recorder = inherited_recorder or TraceRecorder(trace)
+        trace_options = TraceOptions.from_value(trace)
+        event_start = len(run_context.events)
+        usage_start = run_context.usage.snapshot()
+        previous_on_event = run_context.on_event
+        if trace_options.enabled:
+            def on_event(event: TraceEvent) -> None:
+                if previous_on_event is not None:
+                    previous_on_event(event)
+                trace_options.dispatch(event)
+
+            run_context.on_event = on_event
         context_token = set_current_context(run_context)
-        token = None if inherited_recorder else set_current_trace_recorder(recorder)
 
         try:
             for step in range(1, max_steps + 1):
                 if current is None:
-                    recorder.set_context(step=step, node=None)
-                    recorder.emit("flow.end", category="flow", step=step, node=None)
                     run_context.set_execution_context(step=step, node=None)
                     run_context.emit("flow.end", category="flow", step=step, node=None)
+                    events = run_context.events[event_start:]
                     return FlowRunResult(
                         action=last_action,
                         payload=payload,
                         path=path,
-                        trace=list(recorder.events),
+                        trace=[event for event in events if trace_options.includes(event.category)],
                         context=run_context,
+                        usage=run_context.usage.since(usage_start),
                     )
 
                 node_name = current.__class__.__name__
                 path.append(node_name)
-                recorder.set_context(step=step, node=node_name)
-                recorder.emit("node.start", category="node")
                 run_context.set_execution_context(step=step, node=node_name)
                 run_context.emit("node.start", category="node")
                 last_action, payload = current._exec(payload)
                 next_node = current.successors.get(last_action)
-                recorder.set_context(step=step, node=node_name)
                 run_context.set_execution_context(step=step, node=node_name)
-                recorder.emit(
-                    "node.end",
-                    category="node",
-                    action=last_action,
-                    data={"next_node": next_node.__class__.__name__ if next_node else None},
-                )
                 run_context.emit(
                     "node.end",
                     category="node",
@@ -157,8 +154,8 @@ class Flow:
                 )
                 current = next_node
         finally:
-            if token is not None:
-                reset_current_trace_recorder(token)
+            if trace_options.enabled:
+                run_context.on_event = previous_on_event
             reset_current_context(context_token)
 
         raise FlowError(f"Flow exceeded max_steps={max_steps}.")

@@ -36,6 +36,55 @@ class AgentEvent:
 
 
 @dataclass
+class RunUsage:
+    """Cumulative model usage for a context or a delta between two snapshots."""
+
+    requests: int = 0
+    usage_requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def record(self, usage: Mapping[str, Any] | None) -> None:
+        self.requests += 1
+        if not isinstance(usage, Mapping):
+            return
+        input_tokens = _usage_int(usage, "input_tokens", "prompt_tokens")
+        output_tokens = _usage_int(usage, "output_tokens", "completion_tokens")
+        if input_tokens is None or output_tokens is None:
+            return
+        self.usage_requests += 1
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+
+    def snapshot(self) -> RunUsage:
+        return RunUsage(
+            requests=self.requests,
+            usage_requests=self.usage_requests,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+        )
+
+    def since(self, previous: RunUsage) -> RunUsage:
+        return RunUsage(
+            requests=self.requests - previous.requests,
+            usage_requests=self.usage_requests - previous.usage_requests,
+            input_tokens=self.input_tokens - previous.input_tokens,
+            output_tokens=self.output_tokens - previous.output_tokens,
+        )
+
+    def to_dict(self) -> dict[str, int | None]:
+        exact = self.requests == self.usage_requests
+        input_tokens = self.input_tokens if exact else None
+        output_tokens = self.output_tokens if exact else None
+        return {
+            "requests": self.requests,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens if exact else None,
+        }
+
+
+@dataclass
 class RunContext:
     """Runtime context and event stream for one flow execution.
 
@@ -51,6 +100,7 @@ class RunContext:
     artifacts: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     events: list[AgentEvent] = field(default_factory=list)
+    usage: RunUsage = field(default_factory=RunUsage)
     on_event: Callable[[AgentEvent], None] | None = None
     step: int | None = None
     node: str | None = None
@@ -120,6 +170,9 @@ class RunContext:
         self.artifacts[name] = value
         self.emit("artifact.set", category="artifact", data={"name": name})
 
+    def record_model_usage(self, usage: Mapping[str, Any] | None) -> None:
+        self.usage.record(usage)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
@@ -131,8 +184,17 @@ class RunContext:
             "active_message_scope": self.active_message_scope,
             "artifacts": dict(self.artifacts),
             "metadata": dict(self.metadata),
+            "usage": self.usage.to_dict(),
             "events": [event.to_dict() for event in self.events],
         }
+
+
+def _usage_int(usage: Mapping[str, Any], *names: str) -> int | None:
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, int):
+            return value
+    return None
 
 
 _CURRENT_RUN_CONTEXT: ContextVar[RunContext | None] = ContextVar(

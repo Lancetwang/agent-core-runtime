@@ -14,7 +14,7 @@ The runtime is meant to be easy to read and easy to replace:
 - `RunContext` carries messages, events, metadata, and artifacts for one run.
 - `payload` carries explicit business data between nodes and is returned by the flow.
 - `@tool` turns typed Python functions into OpenAI-compatible tool schemas.
-- `LLM` is the default OpenAI-compatible model. It loads `.env` by itself.
+- `LLM` is the default OpenAI-compatible model adapter. Configuration comes from constructor arguments or the process environment.
 
 You can build a normal chat agent in one declaration, or wire your own flow when the loop needs custom logic.
 
@@ -55,7 +55,7 @@ src/agent_core/
   agent.py              # Agent: direct chat runner and embeddable Node
   core/                 # Node, Flow, RunContext, trace events
   llm/                  # LLM, ChatModel protocol, ModelNode, router
-  tools/                # @tool, ToolExecutor, ToolCallNode, file tools
+  tools/                # @tool, ToolExecutor, ToolCallNode
 examples/
   01_basic_agent.py     # Node and Flow only
   02_custom_prompt.py   # Real model call with a custom prompt
@@ -69,23 +69,15 @@ tests/
 
 ```powershell
 uv sync
-Copy-Item .env.example .env
 ```
 
-Set this in `.env`:
+Set model credentials in the process environment or pass them to `LLM(...)`:
 
-```text
-LLM_API_KEY=...
+```powershell
+$env:LLM_API_KEY = "..."
+$env:LLM_BASE_URL = "https://api.example.com"
+$env:LLM_MODEL = "model-name"
 ```
-
-Defaults target DeepSeek:
-
-```text
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
-```
-
-`.env` is ignored by Git.
 
 ## Quick Agent
 

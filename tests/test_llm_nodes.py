@@ -43,7 +43,7 @@ def build_messages(payload: dict) -> list[dict]:
 class LlmNodeTests(unittest.TestCase):
     def test_model_node_stores_assistant_message(self) -> None:
         model = FakeChatModel(
-            [{"role": "assistant", "content": "hello", "usage": {"total_tokens": 3}}]
+            [{"role": "assistant", "content": "hello", "usage": {"prompt_tokens": 2, "completion_tokens": 1}}]
         )
         node = ModelNode(
             model=model,
@@ -61,6 +61,10 @@ class LlmNodeTests(unittest.TestCase):
         self.assertIn(
             "model.response",
             [event.type for event in result.context.events],
+        )
+        self.assertEqual(
+            result.usage.to_dict(),
+            {"requests": 1, "input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
         )
 
     def test_tool_router_preserves_content_when_tool_calls_exist(self) -> None:
@@ -103,6 +107,7 @@ class LlmNodeTests(unittest.TestCase):
                 {
                     "role": "assistant",
                     "content": "",
+                    "usage": {"prompt_tokens": 4, "completion_tokens": 1},
                     "tool_calls": [
                         {
                             "id": "call_1",
@@ -117,6 +122,7 @@ class LlmNodeTests(unittest.TestCase):
                 {
                     "role": "assistant",
                     "content": "Shanghai is sunny.",
+                    "usage": {"prompt_tokens": 8, "completion_tokens": 3},
                 },
             ]
         )
@@ -149,6 +155,7 @@ class LlmNodeTests(unittest.TestCase):
             [event.type for event in result.context.events if event.category == "tool"],
             ["tool.observe", "tool.call", "tool.result", "tool.observe"],
         )
+        self.assertEqual(result.usage.to_dict()["total_tokens"], 16)
 
 
 if __name__ == "__main__":

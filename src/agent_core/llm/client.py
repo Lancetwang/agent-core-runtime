@@ -4,7 +4,6 @@ import os
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
 Message = Mapping[str, Any]
@@ -25,7 +24,7 @@ class ChatModel(Protocol):
 class LLM:
     """Default OpenAI-compatible chat model.
 
-    If values are not passed explicitly, they are read from `.env`:
+    If values are not passed explicitly, they are read from the process environment:
     `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, or the compatible
     `OPENAI_*` / `DEEPSEEK_*` aliases.
     """
@@ -36,26 +35,28 @@ class LLM:
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
-        env_file: str | os.PathLike[str] | None = None,
         client: OpenAI | None = None,
         extra_body: Mapping[str, Any] | None = None,
     ) -> None:
-        load_dotenv(dotenv_path=env_file)
         self.base_url = base_url or _env("LLM_BASE_URL", "OPENAI_BASE_URL", "DEEPSEEK_BASE_URL")
-        self.base_url = self.base_url or "https://api.deepseek.com"
         self.model = model or _env("LLM_MODEL", "OPENAI_MODEL", "DEEPSEEK_MODEL")
-        self.model = self.model or "deepseek-v4-flash"
+        if not self.model:
+            raise RuntimeError("Pass model= or set LLM_MODEL, OPENAI_MODEL, or DEEPSEEK_MODEL.")
+        thinking = _env("LLM_THINKING", "OPENAI_THINKING", "DEEPSEEK_THINKING")
         self.extra_body = {
-            **_default_extra_body(self.base_url),
+            **({"thinking": {"type": thinking}} if thinking else {}),
             **dict(extra_body or {}),
         }
 
         api_key = api_key or _env("LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY")
         if client is None and not api_key:
             raise RuntimeError(
-                "Set LLM_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY in .env."
+                "Pass api_key= or set LLM_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY."
             )
-        self.client = client or OpenAI(api_key=api_key, base_url=self.base_url)
+        client_kwargs = {"api_key": api_key}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        self.client = client or OpenAI(**client_kwargs)
 
     def chat_message(
         self,
@@ -161,12 +162,3 @@ def _get(value: Any, name: str, default: Any = None) -> Any:
 
 def _env(*names: str) -> str | None:
     return next((value for name in names if (value := os.getenv(name))), None)
-
-
-def _default_extra_body(base_url: str) -> dict[str, Any]:
-    thinking = os.getenv("LLM_THINKING") or os.getenv("OPENAI_THINKING") or os.getenv("DEEPSEEK_THINKING")
-    if thinking:
-        return {"thinking": {"type": thinking}}
-    if "deepseek" in base_url.lower():
-        return {"thinking": {"type": "disabled"}}
-    return {}

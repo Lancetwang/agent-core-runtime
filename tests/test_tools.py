@@ -166,7 +166,7 @@ class ToolTests(unittest.TestCase):
             event for event in result.context.events if event.category == "tool"
         ]
 
-        self.assertEqual([event.event for event in tool_events], ["tool.call", "tool.result"])
+        self.assertEqual([event.type for event in tool_events], ["tool.call", "tool.result"])
         self.assertEqual(tool_events[0].data["name"], "get_weather")
         self.assertEqual(tool_events[0].data["arguments"], {"city": "Shanghai"})
         self.assertFalse(tool_events[1].data["is_error"])
