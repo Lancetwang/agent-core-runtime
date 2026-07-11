@@ -11,7 +11,7 @@ The runtime is meant to be easy to read and easy to replace:
 - `Node` is one unit of work.
 - `Flow` connects nodes by action names.
 - `Agent` is also a `Node`, so an agent can run alone or sit inside a larger flow.
-- `RunContext` carries messages, events, metadata, and artifacts for one run.
+- `RunContext` carries scoped messages, one event stream, metadata, artifacts, and cumulative model usage for one run.
 - `payload` carries explicit business data between nodes and is returned by the flow.
 - `@tool` turns typed Python functions into OpenAI-compatible tool schemas.
 - `LLM` is the default OpenAI-compatible model adapter. Configuration comes from constructor arguments or the process environment.
@@ -35,6 +35,7 @@ flowchart TD
     Flow -. "runtime context" .-> Context["RunContext"]
     Context --> Messages["messages"]
     Context --> Events["events"]
+    Context --> Usage["usage"]
     Context --> Artifacts["artifacts"]
     Context --> Metadata["metadata"]
 
@@ -167,7 +168,10 @@ Each run returns a `RunContext`:
 result = agent.run({"text": "hello"})
 messages = result.context.messages
 events = [event.to_dict() for event in result.context.events]
+usage = result.usage.to_dict()
 ```
+
+`RunUsage` accumulates every model request in the flow, including streamed responses. Input and output totals are exact when every provider response includes usage; otherwise the totals are reported as unknown instead of a misleading partial sum.
 
 Nodes can also write to the active context:
 
@@ -181,7 +185,7 @@ if context:
 
 Keep business state in `payload` and runtime/session data in `RunContext`. For example, a router decision, plan, or artifact path belongs in `result.payload`; streamed model deltas, messages, UI events, and artifact metadata belong in `result.context`. Large artifacts such as full reports should live in files, databases, or object storage, with payload/context carrying references rather than the full content.
 
-In multi-agent flows, `RunContext` is shared for events, artifacts, and metadata, but each `Agent` gets an isolated message scope for LLM input. This keeps the observable run unified without leaking one agent's prompt/history into another agent's model call.
+In multi-agent flows, `RunContext` is shared for events, usage, artifacts, and metadata, but each `Agent` gets an isolated message scope for LLM input. This keeps the observable run unified without leaking one agent's prompt/history into another agent's model call.
 
 ## Validate
 
