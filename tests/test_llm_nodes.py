@@ -1,7 +1,7 @@
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, ModelNode, ToolRouterNode, tool
+from agent_core import Agent, ModelNode, RunContext, ToolRouterNode, tool
 from agent_core.core import Flow
 
 
@@ -66,6 +66,22 @@ class LlmNodeTests(unittest.TestCase):
             result.usage.to_dict(),
             {"requests": 1, "input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
         )
+
+    def test_model_node_observes_full_payload_without_retaining_it(self) -> None:
+        model = FakeChatModel([{"role": "assistant", "content": "hello"}])
+        node = ModelNode(model=model, messages=build_messages, tools=[get_weather], chat_kwargs={"temperature": 0})
+        observations = []
+        context = RunContext()
+        context.on_observation = observations.append
+
+        result = Flow(node).run({"history": [{"role": "user", "content": "hi"}]}, context=context)
+
+        request = next(event for event in observations if event.type == "model.request.payload")
+        response = next(event for event in observations if event.type == "model.response.payload")
+        self.assertEqual(request.data["messages"][-1]["content"], "hi")
+        self.assertEqual(request.data["tools"][0]["function"]["name"], "get_weather")
+        self.assertEqual(response.data["message"]["content"], "hello")
+        self.assertNotIn("model.request.payload", [event.type for event in result.context.events])
 
     def test_tool_router_preserves_content_when_tool_calls_exist(self) -> None:
         assistant_message = {

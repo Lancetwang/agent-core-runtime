@@ -46,6 +46,15 @@ class ModelNode(Node):
         chat_kwargs = self._chat_kwargs(state)
 
         if context:
+            context.observe(
+                "model.request.payload",
+                category="model",
+                data={
+                    "messages": messages,
+                    "tools": tools,
+                    "chat_kwargs": {key: value for key, value in chat_kwargs.items() if key != "on_delta"},
+                },
+            )
             context.emit(
                 "model.request",
                 category="model",
@@ -62,6 +71,11 @@ class ModelNode(Node):
 
         if context:
             context.record_model_usage(message.get("usage"))
+            context.observe(
+                "model.response.payload",
+                category="model",
+                data={"message": message},
+            )
             context.emit(
                 "model.response",
                 category="model",

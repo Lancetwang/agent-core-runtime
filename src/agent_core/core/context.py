@@ -102,6 +102,7 @@ class RunContext:
     events: list[AgentEvent] = field(default_factory=list)
     usage: RunUsage = field(default_factory=RunUsage)
     on_event: Callable[[AgentEvent], None] | None = None
+    on_observation: Callable[[AgentEvent], None] | None = None
     step: int | None = None
     node: str | None = None
 
@@ -134,8 +135,35 @@ class RunContext:
             data=dict(data or {}),
         )
         self.events.append(event)
+        if self.on_observation is not None:
+            self.on_observation(event)
         if self.on_event is not None:
             self.on_event(event)
+        return event
+
+    def observe(
+        self,
+        type: str,
+        *,
+        category: str = "runtime",
+        step: int | None = None,
+        node: str | None = None,
+        action: str | None = None,
+        data: Mapping[str, Any] | None = None,
+    ) -> AgentEvent | None:
+        """Send a detailed observation without retaining it in runtime memory."""
+        if self.on_observation is None:
+            return None
+        event = AgentEvent(
+            type=type,
+            category=category,
+            run_id=self.run_id,
+            step=self.step if step is None else step,
+            node=self.node if node is None else node,
+            action=action,
+            data=dict(data or {}),
+        )
+        self.on_observation(event)
         return event
 
     def add_message(self, role: str, content: str, **extra: Any) -> dict[str, Any]:
