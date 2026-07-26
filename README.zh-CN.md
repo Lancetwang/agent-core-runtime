@@ -18,6 +18,14 @@ Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个�
 
 你可以一行声明一个普通工具 agent；如果需要特殊循环，也可以自己连接节点。
 
+## 定位与边界
+
+Runtime 的故事刻意很小：它是"跑起一个 agent 的最小单元"；由于 `Agent` 本身就是 `Node`，同一套元件可以组合成 workflow 或 multi-agent 系统。它拥有的是**执行**：flow、模型与工具调用、以及单次运行的 `RunContext`。
+
+让产品成为"agent 产品"的那些东西都在它之上的 harness 里：提示词分层、会话持久化、上下文压缩、记忆、权限、验证循环和用户界面。[Friday](https://github.com/Lancetwang/friday) 是一个这样的 harness，它的[架构文档](https://github.com/Lancetwang/friday/blob/main/docs/architecture.md)从使用方视角描述了这条边界。
+
+对 harness 作者的契约：只通过公开 API 驱动 runtime——用公开节点组装 flow、经 `Agent` 运行、通过 `add_message` / `get_messages` / `metadata` / `artifacts` / `emit`、usage 快照与事件订阅使用 `RunContext`。需要改写对话历史（压缩、恢复）时，重建一个新 context 并经这套 API 回放消息，而不是改写 runtime 的内部记账。
+
 ## 运行结构
 
 ```mermaid
