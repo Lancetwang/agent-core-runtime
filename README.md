@@ -77,8 +77,16 @@ tests/
 ## Install
 
 ```powershell
-uv sync
+uv add friday-agent-core
 ```
+
+Or with pip:
+
+```powershell
+pip install friday-agent-core
+```
+
+The distribution name is `friday-agent-core`; the import name stays `agent_core`. To develop the runtime itself, clone this repository and run `uv sync`.
 
 Set model credentials in the process environment or pass them to `LLM(...)`:
 

@@ -76,6 +76,18 @@ tests/
 ## 安装
 
 ```powershell
+uv add friday-agent-core
+```
+
+或使用 pip：
+
+```powershell
+pip install friday-agent-core
+```
+
+发行包名是 `friday-agent-core`，import 名保持 `agent_core`。若要开发 runtime 本身，clone 本仓库后执行：
+
+```powershell
 uv sync
 Copy-Item .env.example .env
 ```
