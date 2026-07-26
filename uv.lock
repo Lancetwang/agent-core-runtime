@@ -8,17 +8,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agent-core-runtime"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "openai" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "openai", specifier = ">=1.88.0" }]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -66,6 +55,17 @@ sdist = { url = "https://mirrors.aliyun.com/pypi/packages/fc/f8/98eea607f65de652
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2" },
 ]
+
+[[package]]
+name = "friday-agent-core"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "openai", specifier = ">=1.88.0" }]
 
 [[package]]
 name = "h11"
