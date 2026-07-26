@@ -1,8 +1,13 @@
 # Agent Core Runtime
 
+[![PyPI](https://img.shields.io/pypi/v/friday-agent-core)](https://pypi.org/project/friday-agent-core/)
+[![CI](https://github.com/Lancetwang/agent-core-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/Lancetwang/agent-core-runtime/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/pypi/pyversions/friday-agent-core)](https://pypi.org/project/friday-agent-core/)
+
 Agent Core Runtime is a small Python runtime for building tool-using agents from a few explicit pieces: `Node`, `Flow`, `RunContext`, `Tool`, and `Agent`.
 
-[Chinese README](README.zh-CN.md)
+[Chinese README](README.zh-CN.md) · [API Reference](docs/api.md) · [Design](docs/agent-core.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## Why This Exists
 

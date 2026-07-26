@@ -6,6 +6,14 @@ from agent_core.tools.executor import ToolExecutor
 
 
 class ToolCallNode(Node):
+    """Execute the pending tool calls and append their results as tool messages.
+
+    Reads the assistant message from ``state[assistant_key]``, runs every tool
+    call through the executor, stores results under ``state[results_key]``,
+    appends ``role: tool`` messages to both ``state[messages_key]`` and the
+    active context, and emits ``tool.call`` / ``tool.result`` events.
+    """
+
     def __init__(
         self,
         *,

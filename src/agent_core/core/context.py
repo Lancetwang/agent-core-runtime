@@ -125,6 +125,11 @@ class RunContext:
         action: str | None = None,
         data: Mapping[str, Any] | None = None,
     ) -> AgentEvent:
+        """Record an event in ``events`` and notify both subscribers.
+
+        Use for events the run should remember (they drive UIs and traces).
+        For large payloads that should not stay in memory, use :meth:`observe`.
+        """
         event = AgentEvent(
             type=type,
             category=category,
@@ -167,6 +172,13 @@ class RunContext:
         return event
 
     def add_message(self, role: str, content: str, **extra: Any) -> dict[str, Any]:
+        """Append a chat message to the context and emit ``message.add``.
+
+        ``extra`` keys (e.g. ``tool_calls``, ``tool_call_id``) are stored on
+        the message. ``scope`` targets a specific message scope; by default
+        the active scope is used, keeping each agent's prompt isolated in
+        multi-agent flows.
+        """
         scope = extra.pop("scope", self.active_message_scope)
         message = {"role": role, "content": content, **extra}
         self.messages.append(message)
@@ -180,6 +192,7 @@ class RunContext:
         return message
 
     def get_messages(self, scope: str | None = None) -> list[dict[str, Any]]:
+        """Return the messages for a scope (default: the active scope, else all)."""
         scope = self.active_message_scope if scope is None else scope
         if scope is None:
             return self.messages
@@ -187,6 +200,7 @@ class RunContext:
 
     @contextmanager
     def use_message_scope(self, scope: str):
+        """Temporarily switch the active message scope for the enclosed block."""
         previous = self.active_message_scope
         self.active_message_scope = scope
         try:
@@ -195,10 +209,12 @@ class RunContext:
             self.active_message_scope = previous
 
     def set_artifact(self, name: str, value: Any) -> None:
+        """Store a named artifact and emit ``artifact.set``."""
         self.artifacts[name] = value
         self.emit("artifact.set", category="artifact", data={"name": name})
 
     def record_model_usage(self, usage: Mapping[str, Any] | None) -> None:
+        """Accumulate one model response's usage into :attr:`usage`."""
         self.usage.record(usage)
 
     def to_dict(self) -> dict[str, Any]:

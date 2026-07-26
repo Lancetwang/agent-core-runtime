@@ -21,6 +21,21 @@ _INHERIT_ACTION = object()
 
 
 class Agent(Node):
+    """An agent that runs a flow — and is itself a :class:`Node`.
+
+    Two construction styles:
+
+    - ``Agent(model=..., instructions=..., tools=[...])`` builds the standard
+      model → tool → model chat loop.
+    - ``Agent(Flow(...), instructions=...)`` wraps a custom flow when the loop
+      needs different wiring.
+
+    Because ``Agent`` is a node, agents compose: wire one agent's action to
+    another agent and wrap the pair in an outer ``Flow``. Each agent keeps an
+    isolated message scope inside the shared :class:`RunContext`, so prompts
+    never leak between agents while events and usage stay unified.
+    """
+
     def __init__(
         self,
         flow: Flow | None = None,
@@ -43,18 +58,23 @@ class Agent(Node):
                 chat_kwargs={"stream": stream, **dict(chat_kwargs or {})},
             )
         elif model is not None:
-            raise ValueError("Pass either flow or model, not both.")
+            raise ValueError(
+                "Pass either flow or model, not both. A custom flow already owns its model nodes."
+            )
 
         self.flow = flow
         self.instructions = instructions
         self._message_scope = f"agent:{id(self)}"
         self._instruction_marker = f"agent_core.instructions.{self._message_scope}"
         if action is None or (action is not _INHERIT_ACTION and not isinstance(action, str)):
-            raise TypeError("action must be a string when provided.")
+            raise TypeError(
+                "action must be a string when provided; omit it to inherit the inner flow's final action."
+            )
         self.action = action
         self.max_steps = max_steps
 
     def new_context(self) -> RunContext:
+        """Create a fresh context with this agent's message scope and instructions."""
         context = RunContext(active_message_scope=self._message_scope)
         return self._prepare_context(context)
 
@@ -69,6 +89,12 @@ class Agent(Node):
         on_delta: Any = None,
         payload: Mapping[str, Any] | None = None,
     ) -> str:
+        """Send one user message through the flow and return the final answer text.
+
+        Reuse the same ``context`` across calls to hold a conversation.
+        ``stream``/``on_delta`` override streaming for this call only;
+        ``payload`` seeds extra business state for the flow.
+        """
         run_context = self._prepare_context(context) or RunContext()
         run_context.add_message("user", text, scope=self._message_scope)
         state = {"input": text, **dict(payload or {})}
@@ -95,6 +121,7 @@ class Agent(Node):
         trace: TraceOptions | bool | None = None,
         context: RunContext | None = None,
     ) -> FlowRunResult:
+        """Run the inner flow on a payload and return the full :class:`FlowRunResult`."""
         context = self._prepare_context(context) or RunContext()
         with context.use_message_scope(self._message_scope):
             return self.flow.run(
@@ -105,6 +132,7 @@ class Agent(Node):
             )
 
     def exec(self, payload: Any) -> ExecResult:
+        """Run as a node inside an outer flow, exposing the inner flow's final action."""
         context = self._prepare_context(get_current_context()) or RunContext()
         with context.use_message_scope(self._message_scope):
             result = self.flow.run(

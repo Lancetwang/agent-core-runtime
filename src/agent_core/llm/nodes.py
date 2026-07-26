@@ -14,6 +14,15 @@ ToolProvider = Callable[[Any], Sequence[ToolSpec]] | Sequence[ToolSpec]
 
 
 class ModelNode(Node):
+    """Call the chat model once and store the assistant message.
+
+    Messages come from, in order of precedence: an explicit ``messages``
+    builder, the active context's scoped messages, or ``state[messages_key]``.
+    The response lands in ``state[assistant_key]``; per-call overrides can be
+    passed through ``state[chat_kwargs_key]``. Emits ``model.request`` /
+    ``model.response`` events and records usage on the active context.
+    """
+
     def __init__(
         self,
         *,
@@ -115,6 +124,13 @@ class ModelNode(Node):
 
 
 class ToolRouterNode(Node):
+    """Route on the last assistant message: tool calls pending or final answer.
+
+    Returns ``tool_action`` when the message carries tool calls, otherwise
+    stores the message content under ``state[output_key]`` and returns
+    ``done_action``.
+    """
+
     def __init__(
         self,
         *,
@@ -158,6 +174,7 @@ def _minimal_agent_loop(
     messages_key: str = "history",
     output_key: str = "answer",
 ) -> Flow:
+    """Build the standard model -> router -> tools -> model chat loop."""
     chat_kwargs = {"stream": True, **dict(chat_kwargs or {})}
     model_node = ModelNode(
         model=model,

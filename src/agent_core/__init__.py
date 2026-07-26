@@ -1,6 +1,16 @@
-"""Reusable agent runtime primitives."""
+"""Reusable agent runtime primitives.
+
+Distributed on PyPI as ``friday-agent-core``; the import name is ``agent_core``.
+"""
+
+from importlib.metadata import PackageNotFoundError, version as _version
 
 from agent_core.agent import Agent
+
+try:
+    __version__ = _version("friday-agent-core")
+except PackageNotFoundError:  # source tree without installed metadata
+    __version__ = "0.0.0"
 from agent_core.core import (
     Action,
     AgentEvent,
@@ -22,6 +32,8 @@ from agent_core.core import (
 )
 from agent_core.llm import (
     LLM,
+    ChatModel,
+    Message,
     ModelNode,
     ToolRouterNode,
 )
@@ -40,11 +52,13 @@ __all__ = [
     "Agent",
     "AgentEvent",
     "CallableNode",
+    "ChatModel",
     "ExecResult",
     "Flow",
     "FlowError",
     "FlowRunResult",
     "LLM",
+    "Message",
     "ModelNode",
     "Node",
     "RunContext",
@@ -58,6 +72,7 @@ __all__ = [
     "ToolResult",
     "TraceEvent",
     "TraceOptions",
+    "__version__",
     "format_trace_event",
     "get_current_context",
     "make_trace_options",

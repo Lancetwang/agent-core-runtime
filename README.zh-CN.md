@@ -1,6 +1,10 @@
 # Agent Core Runtime
 
-[English README](README.md)
+[![PyPI](https://img.shields.io/pypi/v/friday-agent-core)](https://pypi.org/project/friday-agent-core/)
+[![CI](https://github.com/Lancetwang/agent-core-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/Lancetwang/agent-core-runtime/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[English README](README.md) · [API 参考](docs/api.md) · [设计说明](docs/agent-core.md) · [更新日志](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
 Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个明确的元件：`Node`、`Flow`、`RunContext`、`Tool` 和 `Agent`。
 

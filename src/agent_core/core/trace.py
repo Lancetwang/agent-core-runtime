@@ -11,6 +11,13 @@ TraceEvent = AgentEvent
 
 @dataclass(frozen=True)
 class TraceOptions:
+    """Select which run events are collected, forwarded, or printed.
+
+    Pass to ``Flow.run(trace=...)`` / ``Agent.chat(trace=...)``: ``True`` for
+    defaults, or :func:`make_trace_options` to filter categories, attach a
+    live ``on_event`` callback, or print formatted lines to the console.
+    """
+
     enabled: bool = True
     include: frozenset[str] = DEFAULT_TRACE_CATEGORIES
     print_to_console: bool = False
@@ -42,7 +49,7 @@ class TraceOptions:
 def make_trace_options(
     *,
     enabled: bool = True,
-    include: Iterable[str] | None = None,
+    include: Iterable[str] | None = None,  # defaults to DEFAULT_TRACE_CATEGORIES
     print_to_console: bool = False,
     printer: Callable[[str], None] = print,
     on_event: Callable[[TraceEvent], None] | None = None,

@@ -7,9 +7,17 @@ from typing import Any, Protocol
 from openai import OpenAI
 
 Message = Mapping[str, Any]
+"""One OpenAI-style chat message: ``{"role": ..., "content": ..., ...}``."""
 
 
 class ChatModel(Protocol):
+    """Provider-neutral chat protocol.
+
+    Implement this one method to plug any model provider into the runtime.
+    It must return an OpenAI-style assistant message dict:
+    ``{"role": "assistant", "content": str, "tool_calls": [...]?, "usage": {...}?}``.
+    """
+
     def chat_message(
         self,
         messages: Sequence[Message],
@@ -66,6 +74,12 @@ class LLM:
         tool_choice: str | Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        """Send one chat completion request and return the assistant message.
+
+        Pass ``stream=True`` to stream; text chunks are forwarded to the
+        optional ``on_delta`` callback and usage is still captured via
+        ``stream_options``. Remaining kwargs go to the provider unchanged.
+        """
         on_delta = kwargs.pop("on_delta", None)
         stream = bool(kwargs.pop("stream", False))
         request = {

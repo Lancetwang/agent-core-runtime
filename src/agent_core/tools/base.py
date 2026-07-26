@@ -8,11 +8,17 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_typ
 
 
 class ToolDefinitionError(ValueError):
-    pass
+    """Raised when a function cannot be converted into a tool schema."""
 
 
 @dataclass(frozen=True)
 class Tool:
+    """A callable tool with an OpenAI-compatible JSON schema.
+
+    Usually produced by the :func:`tool` decorator rather than constructed
+    directly. ``fn`` remains directly callable through ``__call__``.
+    """
+
     name: str
     description: str
     parameters: dict[str, Any]
@@ -22,6 +28,7 @@ class Tool:
         return self.fn(*args, **kwargs)
 
     def to_llm_format(self) -> dict[str, Any]:
+        """Return the OpenAI ``tools`` array entry for this tool."""
         return {
             "type": "function",
             "function": {
@@ -32,15 +39,28 @@ class Tool:
         }
 
     def execute(self, **kwargs: Any) -> Any:
+        """Invoke the tool with keyword arguments parsed from a model tool call."""
         return self.fn(**kwargs)
 
 
 def tool(description: str, *, name: str | None = None) -> Callable[[Callable[..., Any]], Tool]:
+    """Turn a typed Python function into a :class:`Tool`.
+
+    The JSON schema is derived from the signature: parameter types map to
+    JSON types, ``Annotated[T, "text"]`` supplies per-parameter descriptions,
+    and defaults mark parameters optional. Raises
+    :class:`ToolDefinitionError` when a signature cannot be converted —
+    every parameter and the return value must be annotated.
+    """
+
     def decorator(fn: Callable[..., Any]) -> Tool:
         signature = inspect.signature(fn)
         type_hints = get_type_hints(fn, include_extras=True)
         if "return" not in type_hints:
-            raise ToolDefinitionError(f"tool '{fn.__name__}' must have a return type annotation.")
+            raise ToolDefinitionError(
+                f"tool '{fn.__name__}' must have a return type annotation "
+                "(add '-> dict', '-> str', or the actual return type)."
+            )
 
         properties: dict[str, Any] = {}
         required: list[str] = []
@@ -50,12 +70,13 @@ def tool(description: str, *, name: str | None = None) -> Callable[[Callable[...
                 inspect.Parameter.KEYWORD_ONLY,
             }:
                 raise ToolDefinitionError(
-                    f"tool parameter '{param_name}' must be positional-or-keyword or keyword-only."
+                    f"tool '{fn.__name__}' parameter '{param_name}' must be positional-or-keyword "
+                    "or keyword-only (*args/**kwargs cannot be described to the model)."
                 )
             annotation = type_hints.get(param_name)
             if annotation is None:
                 raise ToolDefinitionError(
-                    f"tool parameter '{param_name}' must have a type annotation."
+                    f"tool '{fn.__name__}' parameter '{param_name}' must have a type annotation."
                 )
 
             schema, param_description = _annotation_to_schema(annotation)
@@ -132,4 +153,8 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
     if annotation is list:
         return {"type": "array"}
 
-    raise ToolDefinitionError(f"unsupported tool annotation: {annotation!r}.")
+    raise ToolDefinitionError(
+        f"unsupported tool annotation: {annotation!r}. "
+        "Supported: str, int, float, bool, dict, list, Literal[...], unions of these, "
+        "and Annotated[T, \"description\"]."
+    )
