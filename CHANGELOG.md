@@ -4,6 +4,13 @@ All notable changes to `friday-agent-core` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-07-27
+
+### Added
+
+- `python -m agent_core --version` for installed-version inspection.
+- `python -m agent_core check` for a credential-free local runtime smoke test.
+
 ## [0.1.1] - 2026-07-26
 
 ### Added

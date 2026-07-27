@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+import sys
 from typing import Annotated
 import unittest
 
@@ -31,6 +33,22 @@ class PackageSurfaceTests(unittest.TestCase):
     def test_package_ships_the_py_typed_marker(self) -> None:
         package_dir = Path(agent_core.__file__).parent
         self.assertTrue((package_dir / "py.typed").exists())
+
+    def test_module_reports_version_and_passes_local_check(self) -> None:
+        version = subprocess.run(
+            [sys.executable, "-m", "agent_core", "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        check = subprocess.run(
+            [sys.executable, "-m", "agent_core", "check"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn(agent_core.__version__, version.stdout)
+        self.assertIn("OK (import, node, flow, context)", check.stdout)
 
 
 class WiringValidationTests(unittest.TestCase):

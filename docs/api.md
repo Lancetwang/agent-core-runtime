@@ -5,6 +5,16 @@ package and covered by `agent_core.__all__`. Anything else is internal.
 
 `agent_core.__version__` holds the installed distribution version.
 
+Package diagnostics:
+
+```powershell
+python -m agent_core --version
+python -m agent_core check
+```
+
+The local check exercises `CallableNode`, `Flow`, and `RunContext` without
+credentials or a model request.
+
 ## Core
 
 ### `Node`

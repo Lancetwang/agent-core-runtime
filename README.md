@@ -93,6 +93,18 @@ pip install friday-agent-core
 
 The distribution name is `friday-agent-core`; the import name stays `agent_core`. To develop the runtime itself, clone this repository and run `uv sync`.
 
+Verify the installed package without an API key or model call:
+
+```powershell
+python -c "import agent_core; print(agent_core.__version__)"
+python -m agent_core --version
+python -m agent_core check
+```
+
+`check` executes a local `Node -> Flow -> RunContext` smoke test. It confirms
+that the installed runtime can execute; provider credentials and model
+connectivity belong to the consuming harness and are intentionally not tested.
+
 Set model credentials in the process environment or pass them to `LLM(...)`:
 
 ```powershell

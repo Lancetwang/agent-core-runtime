@@ -96,6 +96,18 @@ uv sync
 Copy-Item .env.example .env
 ```
 
+无需 API Key 或模型调用即可验证安装：
+
+```powershell
+python -c "import agent_core; print(agent_core.__version__)"
+python -m agent_core --version
+python -m agent_core check
+```
+
+`check` 会在本地执行一次 `Node -> Flow -> RunContext` 冒烟测试，用来确认
+runtime 包能够正常运行。Provider 凭据和模型连通性属于上层 harness 配置，
+不会混入通用 runtime 的安装自检。
+
 在 `.env` 中填写：
 
 ```text
