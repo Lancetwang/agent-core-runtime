@@ -1,6 +1,6 @@
 # Agent Core Runtime
 
-[![PyPI](https://img.shields.io/pypi/v/friday-agent-core)](https://pypi.org/project/friday-agent-core/)
+[![PyPI](https://img.shields.io/pypi/v/friday-agent-core?cacheSeconds=300)](https://pypi.org/project/friday-agent-core/)
 [![CI](https://github.com/Lancetwang/agent-core-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/Lancetwang/agent-core-runtime/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
