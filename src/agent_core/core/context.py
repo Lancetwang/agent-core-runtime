@@ -171,7 +171,7 @@ class RunContext:
         self.on_observation(event)
         return event
 
-    def add_message(self, role: str, content: str, **extra: Any) -> dict[str, Any]:
+    def add_message(self, role: str, content: Any, **extra: Any) -> dict[str, Any]:
         """Append a chat message to the context and emit ``message.add``.
 
         ``extra`` keys (e.g. ``tool_calls``, ``tool_call_id``) are stored on
@@ -257,4 +257,3 @@ def set_current_context(context: RunContext) -> Token[RunContext | None]:
 
 def reset_current_context(token: Token[RunContext | None]) -> None:
     _CURRENT_RUN_CONTEXT.reset(token)
-

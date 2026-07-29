@@ -78,6 +78,27 @@ class AgentCorePackageTests(unittest.TestCase):
         self.assertEqual(model.requests[0]["messages"][0]["role"], "system")
         self.assertEqual(model.requests[0]["tools"][0]["function"]["name"], "echo")
 
+    def test_agent_chat_accepts_multimodal_user_content(self) -> None:
+        class Model:
+            def __init__(self) -> None:
+                self.messages = []
+
+            def chat_message(self, messages, **kwargs):
+                self.messages = list(messages)
+                return {"role": "assistant", "content": "I can see it."}
+
+        content = [
+            {"type": "text", "text": "Describe this screenshot."},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,aW1hZ2U="}},
+        ]
+        model = Model()
+        agent = Agent(model=model, instructions="Help.")
+
+        answer = agent.chat("Describe this screenshot.", content=content)
+
+        self.assertEqual(answer, "I can see it.")
+        self.assertEqual(model.messages[-1]["content"], content)
+
     def test_agent_can_be_used_as_a_node(self) -> None:
         def inner_step(payload: dict) -> dict:
             payload["inner"] = "done"

@@ -82,6 +82,7 @@ class Agent(Node):
         self,
         text: str,
         *,
+        content: Any | None = None,
         context: RunContext | None = None,
         max_steps: int = 100,
         trace: TraceOptions | bool | None = None,
@@ -96,7 +97,7 @@ class Agent(Node):
         ``payload`` seeds extra business state for the flow.
         """
         run_context = self._prepare_context(context) or RunContext()
-        run_context.add_message("user", text, scope=self._message_scope)
+        run_context.add_message("user", text if content is None else content, scope=self._message_scope)
         state = {"input": text, **dict(payload or {})}
         chat_kwargs = dict(state.get("chat_kwargs", {}) or {})
         if stream is not None:
