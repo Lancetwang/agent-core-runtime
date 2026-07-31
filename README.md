@@ -204,6 +204,10 @@ events = [event.to_dict() for event in result.context.events]
 usage = result.usage.to_dict()
 ```
 
+Streaming OpenAI-compatible models emit `model.delta` for answer text and
+`model.reasoning.delta` for provider reasoning, allowing a harness to render
+the two channels independently.
+
 `RunUsage` accumulates every model request in the flow, including streamed responses. Input and output totals are exact when every provider response includes usage; otherwise the totals are reported as unknown instead of a misleading partial sum.
 
 Nodes can also write to the active context:

@@ -117,6 +117,19 @@ class LlmNodeTests(unittest.TestCase):
             ["hel", "lo"],
         )
 
+    def test_model_node_emits_reasoning_deltas(self) -> None:
+        class ReasoningModel:
+            def chat_message(self, messages, **kwargs):
+                kwargs["on_reasoning_delta"]("think")
+                return {"role": "assistant", "content": "done", "reasoning_content": "think"}
+
+        result = Flow(
+            ModelNode(model=ReasoningModel(), chat_kwargs={"on_reasoning_delta": lambda _: None})
+        ).run({"history": [{"role": "user", "content": "hi"}]})
+
+        events = [event for event in result.context.events if event.type == "model.reasoning.delta"]
+        self.assertEqual([event.data["content"] for event in events], ["think"])
+
     def test_agent_runs_default_tool_loop(self) -> None:
         model = FakeChatModel(
             [

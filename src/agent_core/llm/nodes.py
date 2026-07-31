@@ -61,7 +61,11 @@ class ModelNode(Node):
                 data={
                     "messages": messages,
                     "tools": tools,
-                    "chat_kwargs": {key: value for key, value in chat_kwargs.items() if key != "on_delta"},
+                    "chat_kwargs": {
+                        key: value
+                        for key, value in chat_kwargs.items()
+                        if key not in {"on_delta", "on_reasoning_delta"}
+                    },
                 },
             )
             context.emit(
@@ -93,6 +97,7 @@ class ModelNode(Node):
                 category="model",
                 data={
                     "has_tool_calls": bool(message.get("tool_calls")),
+                    "has_reasoning": bool(message.get("reasoning_content")),
                     "content_length": len(str(message.get("content", ""))),
                     "usage": message.get("usage", {}),
                 },
@@ -119,10 +124,15 @@ class ModelNode(Node):
         context = get_current_context()
         kwargs = {**self.chat_kwargs, **state.get(self.chat_kwargs_key, {})}
         on_delta = kwargs.pop("on_delta", None)
+        on_reasoning_delta = kwargs.pop("on_reasoning_delta", None)
         if context:
             kwargs["on_delta"] = _delta_callback(context, on_delta)
+            if on_reasoning_delta is not None or isinstance(self.model, LLM):
+                kwargs["on_reasoning_delta"] = _reasoning_delta_callback(context, on_reasoning_delta)
         elif on_delta:
             kwargs["on_delta"] = on_delta
+        if not context and on_reasoning_delta:
+            kwargs["on_reasoning_delta"] = on_reasoning_delta
         return kwargs
 
 
@@ -211,6 +221,16 @@ def _delta_callback(context: Any, callback: Callable[[str], None] | None) -> Cal
     def on_delta(text: str) -> None:
         if text:
             context.emit("model.delta", category="model", data={"content": text})
+            if callback:
+                callback(text)
+
+    return on_delta
+
+
+def _reasoning_delta_callback(context: Any, callback: Callable[[str], None] | None) -> Callable[[str], None]:
+    def on_delta(text: str) -> None:
+        if text:
+            context.emit("model.reasoning.delta", category="model", data={"content": text})
             if callback:
                 callback(text)
 

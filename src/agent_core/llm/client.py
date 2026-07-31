@@ -77,10 +77,12 @@ class LLM:
         """Send one chat completion request and return the assistant message.
 
         Pass ``stream=True`` to stream; text chunks are forwarded to the
-        optional ``on_delta`` callback and usage is still captured via
-        ``stream_options``. Remaining kwargs go to the provider unchanged.
+        optional ``on_delta`` / ``on_reasoning_delta`` callbacks and usage is
+        still captured via ``stream_options``. Remaining kwargs go to the
+        provider unchanged.
         """
         on_delta = kwargs.pop("on_delta", None)
+        on_reasoning_delta = kwargs.pop("on_reasoning_delta", None)
         stream = bool(kwargs.pop("stream", False))
         request = {
             "model": self.model,
@@ -101,7 +103,11 @@ class LLM:
 
         response = self.client.chat.completions.create(**request)
         if stream:
-            return _stream_message(response, on_delta=on_delta)
+            return _stream_message(
+                response,
+                on_delta=on_delta,
+                on_reasoning_delta=on_reasoning_delta,
+            )
         return _message_to_dict(response.choices[0].message, getattr(response, "usage", None))
 
 
@@ -121,7 +127,11 @@ def _message_to_dict(message: Any, usage: Any = None) -> dict[str, Any]:
     return result
 
 
-def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict[str, Any]:
+def _stream_message(
+    chunks: Any,
+    on_delta: Callable[[str], None] | None,
+    on_reasoning_delta: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
     parts: list[str] = []
     reasoning_parts: list[str] = []
     tool_calls: dict[int, dict[str, Any]] = {}
@@ -137,6 +147,8 @@ def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict
                     on_delta(text)
             if reasoning := _get(delta, "reasoning_content"):
                 reasoning_parts.append(reasoning)
+                if on_reasoning_delta:
+                    on_reasoning_delta(reasoning)
             for position, item in enumerate(_get(delta, "tool_calls") or []):
                 _merge_stream_tool_call(tool_calls, item, position)
 

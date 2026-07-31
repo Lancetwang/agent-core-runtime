@@ -213,6 +213,9 @@ messages = result.context.messages
 events = [event.to_dict() for event in result.context.events]
 ```
 
+使用 OpenAI 兼容接口进行流式调用时，正文通过 `model.delta` 事件输出，
+供应商返回的思考内容通过 `model.reasoning.delta` 独立输出，Harness 可以分别渲染。
+
 节点内部也可以写入当前 context：
 
 ```python

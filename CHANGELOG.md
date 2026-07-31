@@ -4,6 +4,13 @@ All notable changes to `friday-agent-core` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.6] - 2026-07-31
+
+### Added
+
+- Emit provider reasoning as a separate `model.reasoning.delta` stream so
+  harnesses can render collapsible thinking without mixing it into answers.
+
 ## [0.1.5] - 2026-07-31
 
 ### Changed

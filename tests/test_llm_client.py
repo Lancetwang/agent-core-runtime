@@ -221,10 +221,12 @@ class LLMTests(unittest.TestCase):
             client=client,
         )
 
+        reasoning_deltas = []
         message = model.chat_message(
             [{"role": "user", "content": "weather"}],
             tools=[{"type": "function", "function": {"name": "get_weather"}}],
             stream=True,
+            on_reasoning_delta=reasoning_deltas.append,
         )
 
         self.assertEqual(
@@ -241,6 +243,7 @@ class LLMTests(unittest.TestCase):
             ],
         )
         self.assertEqual(message["reasoning_content"], "Check the weather.")
+        self.assertEqual(reasoning_deltas, ["Check ", "the weather."])
 
 
 if __name__ == "__main__":
