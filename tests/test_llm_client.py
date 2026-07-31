@@ -32,7 +32,11 @@ class LLMTests(unittest.TestCase):
         response = SimpleNamespace(
             choices=[
                 SimpleNamespace(
-                    message=SimpleNamespace(content="", tool_calls=[tool_call]),
+                    message=SimpleNamespace(
+                        content="",
+                        reasoning_content="I should check the weather.",
+                        tool_calls=[tool_call],
+                    ),
                 )
             ],
             usage=SimpleNamespace(
@@ -59,6 +63,7 @@ class LLMTests(unittest.TestCase):
         )
 
         self.assertEqual(message["role"], "assistant")
+        self.assertEqual(message["reasoning_content"], "I should check the weather.")
         self.assertEqual(message["tool_calls"], [tool_call])
         self.assertEqual(message["usage"]["total_tokens"], 5)
         self.assertEqual(client.chat.completions.last_request["model"], "demo-model")
@@ -150,6 +155,7 @@ class LLMTests(unittest.TestCase):
                     SimpleNamespace(
                         delta=SimpleNamespace(
                             content="",
+                            reasoning_content="Check ",
                             tool_calls=[
                                 SimpleNamespace(
                                     index=0,
@@ -170,6 +176,7 @@ class LLMTests(unittest.TestCase):
                     SimpleNamespace(
                         delta=SimpleNamespace(
                             content=None,
+                            reasoning_content="the weather.",
                             tool_calls=[
                                 SimpleNamespace(
                                     index=0,
@@ -233,6 +240,7 @@ class LLMTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(message["reasoning_content"], "Check the weather.")
 
 
 if __name__ == "__main__":

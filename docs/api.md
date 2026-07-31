@@ -120,7 +120,7 @@ def chat_message(messages, *, tools=None, tool_choice=None, **kwargs) -> dict
 ```
 
 It must return an OpenAI-style assistant message:
-`{"role": "assistant", "content": str, "tool_calls": [...]?, "usage": {...}?}`.
+`{"role": "assistant", "content": str, "reasoning_content": str?, "tool_calls": [...]?, "usage": {...}?}`.
 `Message` is the input message mapping type.
 
 ### `LLM`

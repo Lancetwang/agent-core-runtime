@@ -4,6 +4,19 @@ All notable changes to `friday-agent-core` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-07-31
+
+### Fixed
+
+- Preserve provider `reasoning_content` in streamed and non-streamed assistant
+  messages so thinking models can continue tool-call conversations correctly.
+
+## [0.1.3] - 2026-07-29
+
+### Added
+
+- OpenAI-compatible multimodal user-message content support.
+
 ## [0.1.2] - 2026-07-29
 
 ### Added

@@ -75,7 +75,11 @@ class ModelNode(Node):
         if self.append_message:
             state.setdefault(self.messages_key, []).append(message)
             if context:
-                extra = {"tool_calls": message["tool_calls"]} if message.get("tool_calls") else {}
+                extra = {
+                    key: message[key]
+                    for key in ("reasoning_content", "tool_calls")
+                    if message.get(key)
+                }
                 context.add_message("assistant", str(message.get("content", "")), **extra)
 
         if context:

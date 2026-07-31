@@ -107,6 +107,9 @@ class LLM:
 
 def _message_to_dict(message: Any, usage: Any = None) -> dict[str, Any]:
     result = {"role": "assistant", "content": message.content or ""}
+    reasoning_content = getattr(message, "reasoning_content", None)
+    if reasoning_content:
+        result["reasoning_content"] = reasoning_content
     tool_calls = getattr(message, "tool_calls", None)
     if tool_calls:
         result["tool_calls"] = [
@@ -120,6 +123,7 @@ def _message_to_dict(message: Any, usage: Any = None) -> dict[str, Any]:
 
 def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict[str, Any]:
     parts: list[str] = []
+    reasoning_parts: list[str] = []
     tool_calls: dict[int, dict[str, Any]] = {}
     usage: Any = None
     for chunk in chunks:
@@ -131,10 +135,14 @@ def _stream_message(chunks: Any, on_delta: Callable[[str], None] | None) -> dict
                 parts.append(text)
                 if on_delta:
                     on_delta(text)
+            if reasoning := _get(delta, "reasoning_content"):
+                reasoning_parts.append(reasoning)
             for position, item in enumerate(_get(delta, "tool_calls") or []):
                 _merge_stream_tool_call(tool_calls, item, position)
 
     message = {"role": "assistant", "content": "".join(parts)}
+    if reasoning_parts:
+        message["reasoning_content"] = "".join(reasoning_parts)
     if tool_calls:
         message["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
     if usage is not None:

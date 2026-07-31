@@ -123,6 +123,7 @@ class LlmNodeTests(unittest.TestCase):
                 {
                     "role": "assistant",
                     "content": "",
+                    "reasoning_content": "I should use the weather tool.",
                     "usage": {"prompt_tokens": 4, "completion_tokens": 1},
                     "tool_calls": [
                         {
@@ -166,6 +167,7 @@ class LlmNodeTests(unittest.TestCase):
             ["system", "user", "assistant", "tool", "assistant"],
         )
         self.assertIn("tool_calls", result.context.messages[2])
+        self.assertEqual(result.context.messages[2]["reasoning_content"], "I should use the weather tool.")
         self.assertNotIn("tool_calls", result.context.messages[-1])
         self.assertEqual(
             [event.type for event in result.context.events if event.category == "tool"],
