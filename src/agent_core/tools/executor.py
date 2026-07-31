@@ -66,6 +66,10 @@ class ToolExecutor:
 
     def __init__(self, tools: Sequence[Tool] | None = None) -> None:
         self.tools = list(tools or [])
+        names = [tool.name for tool in self.tools]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"Duplicate tool names: {', '.join(duplicates)}")
         self.tool_map = {tool.name: tool for tool in self.tools}
 
     def parse_tool_calls(self, assistant_message: dict[str, Any]) -> list[ToolCall]:
@@ -73,7 +77,7 @@ class ToolExecutor:
         openai_calls = assistant_message.get("tool_calls")
         if not isinstance(openai_calls, list):
             return []
-        return [ToolCall.from_openai_item(item) for item in openai_calls]
+        return [ToolCall.from_openai_item(item) for item in openai_calls if isinstance(item, dict)]
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
         """Run one tool call and return its result or a readable error."""
@@ -88,6 +92,7 @@ class ToolExecutor:
 
         try:
             result = tool.execute(**tool_call.arguments)
+            content = _stringify_result(result)
         except Exception as exc:
             return ToolResult(
                 tool_call_id=tool_call.id,
@@ -97,7 +102,7 @@ class ToolExecutor:
 
         return ToolResult(
             tool_call_id=tool_call.id,
-            content=_stringify_result(result),
+            content=content,
             is_error=False,
         )
 

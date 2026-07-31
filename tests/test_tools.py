@@ -118,6 +118,33 @@ class ToolTests(unittest.TestCase):
         self.assertTrue(result.is_error)
         self.assertIn("not found", result.content)
 
+    def test_executor_rejects_duplicate_tool_names(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Duplicate tool names: get_weather"):
+            ToolExecutor([weather_tool(), weather_tool()])
+
+    def test_executor_contains_malformed_calls_and_results(self) -> None:
+        broken = Tool(
+            name="broken",
+            description="Return an unserializable value.",
+            parameters={"type": "object", "properties": {}},
+            fn=lambda: object(),
+        )
+        executor = ToolExecutor([broken])
+        calls = executor.parse_tool_calls(
+            {
+                "tool_calls": [
+                    None,
+                    {"id": "call_1", "function": {"name": "broken", "arguments": "{}"}},
+                ]
+            }
+        )
+
+        result = executor.execute(calls[0])
+
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(result.is_error)
+        self.assertIn("TypeError", result.content)
+
     def test_tool_call_node_appends_tool_messages(self) -> None:
         node = ToolCallNode(executor=ToolExecutor([weather_tool()]), next_action="chat")
         payload = {
