@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import json
 import time
 from collections.abc import Sequence
@@ -135,7 +136,10 @@ class ToolExecutor:
             for index, call in enumerate(tool_calls):
                 tool = self.tool_map.get(call.name)
                 if tool is not None and tool.parallel:
-                    futures[index] = pool.submit(self.execute, call)
+                    # Worker threads do not inherit contextvars, so each call
+                    # runs inside a snapshot of the submitting context: tools
+                    # that read get_current_context() keep working concurrently.
+                    futures[index] = pool.submit(contextvars.copy_context().run, self.execute, call)
             results: list[ToolResult] = []
             for index, call in enumerate(tool_calls):
                 future = futures.get(index)
