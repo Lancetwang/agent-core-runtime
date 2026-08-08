@@ -121,6 +121,17 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual(result.payload["answer"], 2)
         self.assertEqual(events[-1].type, "flow.end")
 
+    def test_context_notify_is_live_only(self) -> None:
+        events = []
+        observations = []
+        context = RunContext(on_event=events.append, on_observation=observations.append)
+
+        context.notify("tool.progress", category="tool", data={"content": "working"})
+
+        self.assertEqual([event.type for event in events], ["tool.progress"])
+        self.assertEqual(context.events, [])
+        self.assertEqual(observations, [])
+
 
 if __name__ == "__main__":
     unittest.main()

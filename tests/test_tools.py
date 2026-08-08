@@ -1,10 +1,10 @@
 import json
 import time
 import unittest
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from agent_core.core import Flow
-from agent_core.tools import Tool, ToolCallNode, ToolDefinitionError, ToolExecutor, tool
+from agent_core.tools import Tool, ToolCall, ToolCallNode, ToolDefinitionError, ToolExecutor, get_current_tool_call, tool
 
 
 def get_weather(city: str) -> dict[str, str]:
@@ -189,6 +189,25 @@ class ToolTests(unittest.TestCase):
             "Whether to include source metadata.",
         )
         self.assertTrue(parameters["properties"]["include_source"]["default"])
+
+    def test_typed_dict_schema_and_current_tool_call(self) -> None:
+        class Replacement(TypedDict):
+            old_text: Annotated[str, "Exact text to replace."]
+            new_text: str
+
+        @tool(description="Apply replacements.")
+        def batch_edit(edits: list[Replacement]) -> dict[str, Any]:
+            call = get_current_tool_call()
+            return {"call_id": call.id if call else "", "count": len(edits)}
+
+        items = batch_edit.parameters["properties"]["edits"]["items"]
+        result = ToolExecutor([batch_edit]).execute(
+            ToolCall("edit-1", "batch_edit", {"edits": [{"old_text": "a", "new_text": "b"}]})
+        )
+
+        self.assertEqual(items["required"], ["old_text", "new_text"])
+        self.assertEqual(items["properties"]["old_text"]["description"], "Exact text to replace.")
+        self.assertIn('\"call_id\": \"edit-1\"', result.content)
 
     def test_tool_decorator_requires_annotations(self) -> None:
         with self.assertRaises(ToolDefinitionError):

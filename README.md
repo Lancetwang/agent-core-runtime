@@ -29,7 +29,7 @@ The runtime's story is deliberately small: it is the minimal unit that runs one 
 
 Everything that makes a product an agent product lives above it, in a harness: prompt layering, session persistence, context compaction, memory, permissions, verification loops, and user surfaces. [Friday](https://github.com/Lancetwang/friday) is one such harness; its [architecture doc](https://github.com/Lancetwang/friday/blob/main/docs/architecture.md) describes this boundary from the consumer side.
 
-The contract for harness authors: drive the runtime through its public API — compose flows from published nodes, run them via `Agent`, and use `RunContext` through `add_message` / `get_messages` / `metadata` / `artifacts` / `emit`, usage snapshots, and the event subscriptions. When conversation history must change (compaction, resume), build a fresh context and replay messages through that API instead of editing the runtime's internal bookkeeping.
+The contract for harness authors: drive the runtime through its public API — compose flows from published nodes, run them via `Agent`, and use `RunContext` through `add_message` / `get_messages` / `metadata` / `artifacts` / `emit` / `observe` / `notify`, usage snapshots, and the event subscriptions. When conversation history must change (compaction, resume), build a fresh context and replay messages through that API instead of editing the runtime's internal bookkeeping.
 
 ## Runtime Shape
 

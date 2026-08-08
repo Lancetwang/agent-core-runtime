@@ -42,6 +42,17 @@ class ToolCall:
         )
 
 
+_CURRENT_TOOL_CALL: contextvars.ContextVar[ToolCall | None] = contextvars.ContextVar(
+    "agent_core_current_tool_call",
+    default=None,
+)
+
+
+def get_current_tool_call() -> ToolCall | None:
+    """Return the tool call executing in this thread or async context."""
+    return _CURRENT_TOOL_CALL.get()
+
+
 @dataclass(frozen=True)
 class ToolResult:
     """Outcome of one tool execution, ready to feed back to the model."""
@@ -103,23 +114,27 @@ class ToolExecutor:
                 elapsed_ms=(time.monotonic() - started) * 1000,
             )
 
+        token = _CURRENT_TOOL_CALL.set(tool_call)
         try:
-            result = tool.execute(**tool_call.arguments)
-            content = _stringify_result(result)
-        except Exception as exc:
+            try:
+                result = tool.execute(**tool_call.arguments)
+                content = _stringify_result(result)
+            except Exception as exc:
+                return ToolResult(
+                    tool_call_id=tool_call.id,
+                    content=f"Tool '{tool_call.name}' failed: {type(exc).__name__}: {exc}",
+                    is_error=True,
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                )
+
             return ToolResult(
                 tool_call_id=tool_call.id,
-                content=f"Tool '{tool_call.name}' failed: {type(exc).__name__}: {exc}",
-                is_error=True,
+                content=content,
+                is_error=False,
                 elapsed_ms=(time.monotonic() - started) * 1000,
             )
-
-        return ToolResult(
-            tool_call_id=tool_call.id,
-            content=content,
-            is_error=False,
-            elapsed_ms=(time.monotonic() - started) * 1000,
-        )
+        finally:
+            _CURRENT_TOOL_CALL.reset(token)
 
     def execute_all(self, tool_calls: Sequence[ToolCall]) -> list[ToolResult]:
         """Run every tool call and collect the results in the original order.

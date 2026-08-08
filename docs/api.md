@@ -62,8 +62,8 @@ Key methods:
 - `get_messages(scope=None)` — messages for the active scope, or all.
 - `use_message_scope(scope)` — context manager to switch the active scope.
 - `emit(type, category=..., data=...)` — record an event and notify
-  subscribers; `observe(...)` notifies `on_observation` only, without
-  retaining the event in memory (for large payloads).
+  subscribers; `observe(...)` sends non-retained detail to `on_observation`,
+  while `notify(...)` sends transient UI progress to `on_event` only.
 - `set_artifact(name, value)`, `record_model_usage(usage)`, `to_dict()`.
 
 Inside a node, `get_current_context()` returns the active run's context (or
@@ -150,7 +150,8 @@ otherwise stores the text under `state[output_key]` and returns
 
 Converts a typed Python function into a `Tool` with an OpenAI-compatible
 JSON schema. Parameter types map to JSON types; `Annotated[T, "text"]` adds
-per-parameter descriptions; defaults mark parameters optional. Raises
+per-parameter descriptions; `TypedDict` describes structured objects inside
+lists; defaults mark parameters optional. Raises
 `ToolDefinitionError` (naming the function and parameter) when a signature
 cannot be converted.
 
@@ -166,7 +167,8 @@ Executes model tool calls. Model-caused failures never raise: unknown tools
 (the error lists available names) and tool exceptions come back as
 `ToolResult(is_error=True)` so the model can self-correct.
 `parse_tool_calls(message)` extracts `ToolCall`s; `execute` / `execute_all`
-run them.
+run them. During execution, `get_current_tool_call()` exposes the active call
+to tools that need to correlate transient progress with a UI entry.
 
 ### `ToolCallNode`
 

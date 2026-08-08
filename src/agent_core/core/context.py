@@ -171,6 +171,31 @@ class RunContext:
         self.on_observation(event)
         return event
 
+    def notify(
+        self,
+        type: str,
+        *,
+        category: str = "runtime",
+        step: int | None = None,
+        node: str | None = None,
+        action: str | None = None,
+        data: Mapping[str, Any] | None = None,
+    ) -> AgentEvent | None:
+        """Notify the live host without retaining the event or writing it to trace."""
+        if self.on_event is None:
+            return None
+        event = AgentEvent(
+            type=type,
+            category=category,
+            run_id=self.run_id,
+            step=self.step if step is None else step,
+            node=self.node if node is None else node,
+            action=action,
+            data=dict(data or {}),
+        )
+        self.on_event(event)
+        return event
+
     def add_message(self, role: str, content: Any, **extra: Any) -> dict[str, Any]:
         """Append a chat message to the context and emit ``message.add``.
 

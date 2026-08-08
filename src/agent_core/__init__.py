@@ -44,6 +44,7 @@ from agent_core.tools import (
     ToolDefinitionError,
     ToolExecutor,
     ToolResult,
+    get_current_tool_call,
     tool,
 )
 
@@ -74,6 +75,7 @@ __all__ = [
     "TraceOptions",
     "__version__",
     "format_trace_event",
+    "get_current_tool_call",
     "get_current_context",
     "make_trace_options",
     "reset_current_context",

@@ -4,7 +4,7 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import UnionType
-from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints, is_typeddict
 
 
 class ToolDefinitionError(ValueError):
@@ -134,6 +134,20 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
     origin = get_origin(annotation)
     args = get_args(annotation)
 
+    if is_typeddict(annotation):
+        hints = get_type_hints(annotation, include_extras=True)
+        properties: dict[str, Any] = {}
+        for name, hint in hints.items():
+            schema, description = _annotation_to_schema(hint)
+            if description:
+                schema["description"] = description
+            properties[name] = schema
+        result: dict[str, Any] = {"type": "object", "properties": properties}
+        required = [name for name in hints if name in annotation.__required_keys__]
+        if required:
+            result["required"] = required
+        return result
+
     if origin is Literal:
         values = list(args)
         value_type = type(values[0]) if values else str
@@ -169,6 +183,6 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
 
     raise ToolDefinitionError(
         f"unsupported tool annotation: {annotation!r}. "
-        "Supported: str, int, float, bool, dict, list, Literal[...], unions of these, "
+        "Supported: str, int, float, bool, dict, list, TypedDict, Literal[...], unions of these, "
         "and Annotated[T, \"description\"]."
     )
