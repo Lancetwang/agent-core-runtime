@@ -15,16 +15,16 @@ Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个�
 - `Node`：一个工作单元。
 - `Flow`：根据 action 名称把节点连接起来。
 - `Agent`：本身也是 `Node`，既可以单独运行，也可以嵌进更大的 flow。
-- `RunContext`：保存一次运行中的 messages、events、metadata 和 artifacts。
+- `RunContext`：保存由调用方持有的会话 messages、events、metadata 和 artifacts。
 - `payload`：在节点之间传递明确的业务数据，并作为 flow 的结果返回。
 - `@tool`：把带类型标注的 Python 函数转换成 OpenAI-compatible tool schema。
-- `LLM`：默认 OpenAI-compatible 模型，会自己读取 `.env`。
+- `LLM`：默认 OpenAI-compatible 模型，从构造参数或进程环境变量读取配置。
 
 你可以一行声明一个普通工具 agent；如果需要特殊循环，也可以自己连接节点。
 
 ## 定位与边界
 
-Runtime 的故事刻意很小：它是"跑起一个 agent 的最小单元"；由于 `Agent` 本身就是 `Node`，同一套元件可以组合成 workflow 或 multi-agent 系统。它拥有的是**执行**：flow、模型与工具调用、以及单次运行的 `RunContext`。
+Runtime 的故事刻意很小：它是"跑起一个 agent 的最小单元"；由于 `Agent` 本身就是 `Node`，同一套元件可以组合成顺序 workflow 或嵌套 agent 系统。它拥有的是**执行**：flow、模型与工具调用、以及调用方持有的 `RunContext`。执行模型是同步的；`parallel=True` 只为同一批工具提供有界线程并发。
 
 让产品成为"agent 产品"的那些东西都在它之上的 harness 里：提示词分层、会话持久化、上下文压缩、记忆、权限、验证循环和用户界面。[Friday](https://github.com/Lancetwang/friday) 是一个这样的 harness，它的[架构文档](https://github.com/Lancetwang/friday/blob/main/docs/architecture.md)从使用方视角描述了这条边界。
 
@@ -67,7 +67,7 @@ src/agent_core/
   agent.py              # Agent：直接聊天入口，也是可嵌套的 Node
   core/                 # Node, Flow, RunContext, trace events
   llm/                  # LLM, ChatModel 协议, ModelNode, router
-  tools/                # @tool, ToolExecutor, ToolCallNode, file tools
+  tools/                # @tool, ToolExecutor, ToolCallNode
 examples/
   01_basic_agent.py     # 只使用 Node 和 Flow
   02_custom_prompt.py   # 真实模型调用和自定义 prompt
@@ -93,7 +93,6 @@ pip install friday-agent-core
 
 ```powershell
 uv sync
-Copy-Item .env.example .env
 ```
 
 无需 API Key 或模型调用即可验证安装：
@@ -108,20 +107,13 @@ python -m agent_core check
 runtime 包能够正常运行。Provider 凭据和模型连通性属于上层 harness 配置，
 不会混入通用 runtime 的安装自检。
 
-在 `.env` 中填写：
+Runtime 不会自动读取 `.env`。请由上层应用加载配置，或直接设置进程环境变量：
 
-```text
-LLM_API_KEY=...
+```powershell
+$env:LLM_API_KEY = "..."
+$env:LLM_BASE_URL = "https://api.example.com"
+$env:LLM_MODEL = "model-name"
 ```
-
-默认配置面向 DeepSeek：
-
-```text
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
-```
-
-`.env` 已被 Git 忽略。
 
 ## 快速声明 Agent
 
@@ -212,6 +204,10 @@ result = agent.run({"text": "hello"})
 messages = result.context.messages
 events = [event.to_dict() for event in result.context.events]
 ```
+
+同一个 context 可以跨多次 `Agent.chat` 复用来保留会话；它的 `run_id`、
+messages、events 和累计 usage 会随之延续，而 `FlowRunResult.usage` 只表示
+本次调用的增量。
 
 使用 OpenAI 兼容接口进行流式调用时，正文通过 `model.delta` 事件输出，
 供应商返回的思考内容通过 `model.reasoning.delta` 独立输出，Harness 可以分别渲染。

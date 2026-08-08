@@ -1,7 +1,15 @@
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, ModelNode, RunContext, ToolRouterNode, tool
+from agent_core import (
+    Agent,
+    ModelNode,
+    RunContext,
+    ToolCallNode,
+    ToolExecutor,
+    ToolRouterNode,
+    tool,
+)
 from agent_core.core import Flow
 
 
@@ -66,6 +74,50 @@ class LlmNodeTests(unittest.TestCase):
             result.usage.to_dict(),
             {"requests": 1, "input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
         )
+
+    def test_model_node_does_not_mutate_input_history(self) -> None:
+        model = FakeChatModel([{"role": "assistant", "content": "hello"}])
+        payload = {"history": [{"role": "user", "content": "hi"}]}
+
+        result = Flow(ModelNode(model=model)).run(payload)
+
+        self.assertEqual(payload["history"], [{"role": "user", "content": "hi"}])
+        self.assertEqual(len(result.payload["history"]), 2)
+
+    def test_context_imports_payload_history_before_tool_loop(self) -> None:
+        model = FakeChatModel(
+            [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city": "Shanghai"}',
+                            },
+                        }
+                    ],
+                },
+                {"role": "assistant", "content": "sunny"},
+            ]
+        )
+        model_node = ModelNode(model=model, tools=[get_weather], action="observe")
+        router_node = ToolRouterNode(tool_action="tool_call", done_action="final")
+        tool_node = ToolCallNode(executor=ToolExecutor([get_weather]), next_action="chat")
+        model_node - "observe" >> router_node
+        router_node - "tool_call" >> tool_node
+        tool_node - "chat" >> model_node
+
+        Flow(model_node).run({"history": [{"role": "user", "content": "weather?"}]})
+
+        self.assertEqual(
+            [message["role"] for message in model.requests[1]["messages"]],
+            ["user", "assistant", "tool"],
+        )
+        self.assertEqual(model.requests[1]["messages"][0]["content"], "weather?")
 
     def test_model_node_observes_full_payload_without_retaining_it(self) -> None:
         model = FakeChatModel([{"role": "assistant", "content": "hello"}])

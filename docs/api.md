@@ -51,9 +51,12 @@ class names), `trace` (selected events), `context` (the `RunContext`),
 
 ### `RunContext`
 
-Runtime state for one execution: `messages` and per-agent `message_scopes`,
+Caller-owned runtime/session state: `messages` and per-agent `message_scopes`,
 `events`, `artifacts`, `metadata`, cumulative `usage`, and the
 `on_event` / `on_observation` subscriber hooks.
+
+Reuse one context across `Agent.chat` calls to preserve a conversation. Do not
+drive the same context concurrently from multiple flows.
 
 Key methods:
 
@@ -113,7 +116,8 @@ while prompts never leak between agents.
 
 ### `ChatModel` (protocol)
 
-Implement one method to plug in any provider:
+Implement one normalized OpenAI-style method, translating a provider's native
+request and response schema when needed:
 
 ```python
 def chat_message(messages, *, tools=None, tool_choice=None, **kwargs) -> dict
@@ -146,7 +150,7 @@ otherwise stores the text under `state[output_key]` and returns
 
 ## Tools
 
-### `@tool(description, *, name=None)`
+### `@tool(description, *, name=None, parallel=False)`
 
 Converts a typed Python function into a `Tool` with an OpenAI-compatible
 JSON schema. Parameter types map to JSON types; `Annotated[T, "text"]` adds
@@ -157,7 +161,7 @@ cannot be converted.
 
 ### `Tool`
 
-`name`, `description`, `parameters` (JSON schema), `fn`. `to_llm_format()`
+`name`, `description`, `parameters` (JSON schema), `fn`, `parallel`. `to_llm_format()`
 returns the OpenAI `tools` entry; `execute(**kwargs)` invokes the function;
 the instance itself stays callable.
 
@@ -167,7 +171,8 @@ Executes model tool calls. Model-caused failures never raise: unknown tools
 (the error lists available names) and tool exceptions come back as
 `ToolResult(is_error=True)` so the model can self-correct.
 `parse_tool_calls(message)` extracts `ToolCall`s; `execute` / `execute_all`
-run them. During execution, `get_current_tool_call()` exposes the active call
+run them. Consecutive `parallel=True` tools form concurrent batches; serial
+tools are exclusive barriers. During execution, `get_current_tool_call()` exposes the active call
 to tools that need to correlate transient progress with a UI entry.
 
 ### `ToolCallNode`
@@ -196,8 +201,8 @@ Pass `trace=True` for defaults, or build options with categories from
 
 | Event | Category | Emitted by |
 | --- | --- | --- |
-| `node.start` / `node.end` | `node` | `Flow` |
-| `flow.end` | `flow` | `Flow` |
+| `node.start` / `node.end` / `node.error` | `node` | `Flow` |
+| `flow.end` / `flow.error` | `flow` | `Flow` |
 | `model.request` / `model.response` | `model` | `ModelNode` |
 | `model.delta` | `model` | streaming callback |
 | `model.request.payload` / `model.response.payload` | `model` | `ModelNode` (observe-only) |

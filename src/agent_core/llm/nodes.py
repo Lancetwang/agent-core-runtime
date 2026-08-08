@@ -16,8 +16,9 @@ ToolProvider = Callable[[Any], Sequence[ToolSpec]] | Sequence[ToolSpec]
 class ModelNode(Node):
     """Call the chat model once and store the assistant message.
 
-    Messages come from, in order of precedence: an explicit ``messages``
-    builder, the active context's scoped messages, or ``state[messages_key]``.
+    Messages come from an explicit ``messages`` builder when provided.
+    Otherwise the active context scope is canonical; an initial
+    ``state[messages_key]`` history is imported into an empty scope once.
     The response lands in ``state[assistant_key]``; per-call overrides can be
     passed through ``state[chat_kwargs_key]``. Emits ``model.request`` /
     ``model.response`` events and records usage on the active context.
@@ -37,7 +38,7 @@ class ModelNode(Node):
         append_message: bool = True,
     ) -> None:
         super().__init__()
-        self.model = model or LLM()
+        self.model: ChatModel | None = model
         self.messages = messages
         self.tools = tools
         self.assistant_key = assistant_key
@@ -50,9 +51,10 @@ class ModelNode(Node):
     def exec(self, payload: Any) -> ExecResult:
         state = dict(payload or {})
         context = get_current_context()
+        model = self._get_model()
         messages = self._messages(state)
         tools = self._tools(state)
-        chat_kwargs = self._chat_kwargs(state)
+        chat_kwargs = self._chat_kwargs(state, model)
 
         if context:
             context.observe(
@@ -74,10 +76,12 @@ class ModelNode(Node):
                 data={"message_count": len(messages), "tool_names": _tool_names(tools)},
             )
 
-        message = self.model.chat_message(messages, tools=tools or None, **chat_kwargs)
+        message = model.chat_message(messages, tools=tools or None, **chat_kwargs)
         state[self.assistant_key] = message
         if self.append_message:
-            state.setdefault(self.messages_key, []).append(message)
+            history = list(state.get(self.messages_key, []))
+            history.append(message)
+            state[self.messages_key] = history
             if context:
                 tool_calls = message.get("tool_calls")
                 extra = {"tool_calls": tool_calls} if tool_calls else {}
@@ -112,6 +116,15 @@ class ModelNode(Node):
             scoped_messages = context.get_messages()
             if scoped_messages:
                 return list(scoped_messages)
+            for message in state.get(self.messages_key, []):
+                if not isinstance(message, Mapping) or not isinstance(message.get("role"), str):
+                    continue
+                context.add_message(
+                    message["role"],
+                    message.get("content", ""),
+                    **{key: value for key, value in message.items() if key not in {"role", "content"}},
+                )
+            return list(context.get_messages())
         return list(state.get(self.messages_key, []))
 
     def _tools(self, state: dict[str, Any]) -> list[Mapping[str, Any]]:
@@ -120,20 +133,25 @@ class ModelNode(Node):
         tools = self.tools(state) if callable(self.tools) else self.tools
         return [tool.to_llm_format() if isinstance(tool, Tool) else tool for tool in tools]
 
-    def _chat_kwargs(self, state: dict[str, Any]) -> dict[str, Any]:
+    def _chat_kwargs(self, state: dict[str, Any], model: ChatModel) -> dict[str, Any]:
         context = get_current_context()
         kwargs = {**self.chat_kwargs, **state.get(self.chat_kwargs_key, {})}
         on_delta = kwargs.pop("on_delta", None)
         on_reasoning_delta = kwargs.pop("on_reasoning_delta", None)
         if context:
             kwargs["on_delta"] = _delta_callback(context, on_delta)
-            if on_reasoning_delta is not None or isinstance(self.model, LLM):
+            if on_reasoning_delta is not None or isinstance(model, LLM):
                 kwargs["on_reasoning_delta"] = _reasoning_delta_callback(context, on_reasoning_delta)
         elif on_delta:
             kwargs["on_delta"] = on_delta
         if not context and on_reasoning_delta:
             kwargs["on_reasoning_delta"] = on_reasoning_delta
         return kwargs
+
+    def _get_model(self) -> ChatModel:
+        if self.model is None:
+            self.model = LLM()
+        return self.model
 
 
 class ToolRouterNode(Node):

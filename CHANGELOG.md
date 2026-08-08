@@ -4,6 +4,25 @@ All notable changes to `friday-agent-core` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Let a terminal node finish successfully on the final allowed `max_steps`
+  slot and emit `node.error` / `flow.error` events on failures.
+- Import initial payload history into an empty context scope so tool loops keep
+  their original system and user messages.
+- Avoid mutating caller-owned history lists in model and tool nodes.
+- Treat serial tools as exclusive barriers between parallel batches.
+- Delay construction of the default provider until the first model call.
+
+## [0.1.9] - 2026-08-08
+
+### Added
+
+- `get_current_tool_call()` exposes the active invocation to tools that need
+  to correlate transient progress with a UI entry.
+
 ## [0.1.8] - 2026-08-07
 
 ### Added
@@ -19,6 +38,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - `ToolResult.elapsed_ms` and the `tool.result` event data now carry the
   wall-clock execution time of each call, measured inside the executor —
   accurate per call even when the batch runs concurrently.
+
+## [0.1.7] - 2026-08-07
+
+### Fixed
+
+- Harden tool schema generation, duplicate-name validation, malformed call
+  parsing, unknown-tool errors, and unserializable tool-result handling.
 
 ## [0.1.6] - 2026-07-31
 

@@ -51,6 +51,38 @@ class CoreFlowTests(unittest.TestCase):
         with self.assertRaises(FlowError):
             Flow(node).run({}, max_steps=2)
 
+    def test_terminal_node_can_finish_on_last_step(self) -> None:
+        result = Flow(CallableNode(lambda payload: payload)).run({}, max_steps=1)
+
+        self.assertEqual(result.path, ["CallableNode"])
+        self.assertEqual(result.action, "default")
+
+    def test_flow_records_node_and_flow_errors(self) -> None:
+        context = RunContext()
+
+        def fail(payload):
+            raise ValueError("broken")
+
+        with self.assertRaisesRegex(ValueError, "broken"):
+            Flow(CallableNode(fail)).run({}, context=context)
+
+        self.assertEqual(
+            [event.type for event in context.events],
+            ["node.start", "node.error", "flow.error"],
+        )
+        self.assertEqual(context.events[-1].data["error_type"], "ValueError")
+
+    def test_flow_records_max_steps_error(self) -> None:
+        node = CallableNode(lambda payload: payload)
+        node >> node
+        context = RunContext()
+
+        with self.assertRaises(FlowError):
+            Flow(node).run({}, max_steps=1, context=context)
+
+        self.assertEqual(context.events[-1].type, "flow.error")
+        self.assertEqual(context.events[-1].data["error_type"], "FlowError")
+
     def test_flow_collects_trace_events(self) -> None:
         node = CallableNode(lambda payload: payload)
 

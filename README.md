@@ -16,7 +16,7 @@ The runtime is meant to be easy to read and easy to replace:
 - `Node` is one unit of work.
 - `Flow` connects nodes by action names.
 - `Agent` is also a `Node`, so an agent can run alone or sit inside a larger flow.
-- `RunContext` carries scoped messages, one event stream, metadata, artifacts, and cumulative model usage for one run.
+- `RunContext` carries scoped messages, one event stream, metadata, artifacts, and cumulative model usage for a caller-owned session.
 - `payload` carries explicit business data between nodes and is returned by the flow.
 - `@tool` turns typed Python functions into OpenAI-compatible tool schemas.
 - `LLM` is the default OpenAI-compatible model adapter. Configuration comes from constructor arguments or the process environment.
@@ -25,7 +25,7 @@ You can build a normal chat agent in one declaration, or wire your own flow when
 
 ## Scope and Boundary
 
-The runtime's story is deliberately small: it is the minimal unit that runs one agent, and the same pieces compose into workflows and multi-agent systems because `Agent` is a `Node`. It owns *execution* — flows, model and tool calls, and the per-run `RunContext`.
+The runtime's story is deliberately small: it is the minimal unit that runs one agent, and the same pieces compose into sequential workflows and nested agent systems because `Agent` is a `Node`. It owns *execution* — flows, model and tool calls, and the caller-owned `RunContext`. Execution is synchronous; `parallel=True` tools only add bounded thread-pool concurrency within one tool batch.
 
 Everything that makes a product an agent product lives above it, in a harness: prompt layering, session persistence, context compaction, memory, permissions, verification loops, and user surfaces. [Friday](https://github.com/Lancetwang/friday) is one such harness; its [architecture doc](https://github.com/Lancetwang/friday/blob/main/docs/architecture.md) describes this boundary from the consumer side.
 
@@ -203,6 +203,10 @@ messages = result.context.messages
 events = [event.to_dict() for event in result.context.events]
 usage = result.usage.to_dict()
 ```
+
+A context may be reused across `Agent.chat` calls to preserve a conversation.
+Its `run_id`, messages, events, and cumulative usage then span those calls;
+`FlowRunResult.usage` remains the delta for the current invocation.
 
 Streaming OpenAI-compatible models emit `model.delta` for answer text and
 `model.reasoning.delta` for provider reasoning, allowing a harness to render

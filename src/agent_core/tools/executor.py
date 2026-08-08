@@ -139,30 +139,39 @@ class ToolExecutor:
     def execute_all(self, tool_calls: Sequence[ToolCall]) -> list[ToolResult]:
         """Run every tool call and collect the results in the original order.
 
-        Calls to tools marked ``parallel`` run concurrently on a bounded thread
-        pool; everything else runs one at a time in declaration order. Results
-        are returned in ``tool_calls`` order either way, so hosts can append
-        them to the conversation without re-sorting.
+        Consecutive calls to tools marked ``parallel`` run concurrently on a
+        bounded thread pool. A serial call is an exclusive barrier between
+        parallel batches. Results preserve ``tool_calls`` order either way.
         """
         if not tool_calls:
             return []
-        futures: dict[int, Future[ToolResult]] = {}
+        results: list[ToolResult | None] = [None] * len(tool_calls)
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            batch: list[tuple[int, ToolCall]] = []
+
+            def flush_parallel_batch() -> None:
+                futures: dict[int, Future[ToolResult]] = {
+                    index: pool.submit(
+                        contextvars.copy_context().run,
+                        self.execute,
+                        call,
+                    )
+                    for index, call in batch
+                }
+                for index, future in futures.items():
+                    results[index] = future.result()
+                batch.clear()
+
             for index, call in enumerate(tool_calls):
                 tool = self.tool_map.get(call.name)
                 if tool is not None and tool.parallel:
-                    # Worker threads do not inherit contextvars, so each call
-                    # runs inside a snapshot of the submitting context: tools
-                    # that read get_current_context() keep working concurrently.
-                    futures[index] = pool.submit(contextvars.copy_context().run, self.execute, call)
-            results: list[ToolResult] = []
-            for index, call in enumerate(tool_calls):
-                future = futures.get(index)
-                if future is not None:
-                    results.append(future.result())
+                    batch.append((index, call))
                 else:
-                    results.append(self.execute(call))
-        return results
+                    flush_parallel_batch()
+                    results[index] = self.execute(call)
+            flush_parallel_batch()
+
+        return [result for result in results if result is not None]
 
 
 def _safe_json_loads(value: str) -> Any:

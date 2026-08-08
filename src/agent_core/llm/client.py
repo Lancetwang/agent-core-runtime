@@ -11,10 +11,10 @@ Message = Mapping[str, Any]
 
 
 class ChatModel(Protocol):
-    """Provider-neutral chat protocol.
+    """Runtime model protocol normalized to OpenAI-style messages.
 
-    Implement this one method to plug any model provider into the runtime.
-    It must return an OpenAI-style assistant message dict:
+    Provider adapters implement this method and translate their native schema.
+    The runtime expects an OpenAI-style assistant message dict:
     ``{"role": "assistant", "content": str, "tool_calls": [...]?, "usage": {...}?}``.
     """
 
@@ -64,7 +64,7 @@ class LLM:
         client_kwargs = {"api_key": api_key}
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
-        self.client = client or OpenAI(**client_kwargs)
+        self.client = client if client is not None else OpenAI(**client_kwargs)
 
     def chat_message(
         self,

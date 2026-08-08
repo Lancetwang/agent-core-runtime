@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 import unittest
 from typing import Annotated, Any, Literal, TypedDict
@@ -106,6 +107,68 @@ class ToolTests(unittest.TestCase):
             [(result.tool_call_id, result.content) for result in results],
             [("call_1", "write:w"), ("call_2", "grep:g"), ("call_3", "read:r")],
         )
+
+    def test_serial_tool_is_a_barrier_between_parallel_batches(self) -> None:
+        active: set[str] = set()
+        lock = threading.Lock()
+        serial_overlapped = False
+
+        def parallel(name: str, delay: float) -> Tool:
+            def run(value: str) -> str:
+                with lock:
+                    active.add(name)
+                try:
+                    time.sleep(delay)
+                    return value
+                finally:
+                    with lock:
+                        active.remove(name)
+
+            return Tool(
+                name=name,
+                description="Parallel test tool.",
+                parameters={
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                    "required": ["value"],
+                },
+                fn=run,
+                parallel=True,
+            )
+
+        def serial(value: str) -> str:
+            nonlocal serial_overlapped
+            with lock:
+                serial_overlapped = bool(active)
+            return value
+
+        serial_tool = Tool(
+            name="write",
+            description="Serial test tool.",
+            parameters={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+            },
+            fn=serial,
+        )
+        executor = ToolExecutor(
+            [parallel("read", 0.03), serial_tool, parallel("grep", 0.2)]
+        )
+        calls = executor.parse_tool_calls(
+            {
+                "tool_calls": [
+                    _openai_call("call_1", "read", "r"),
+                    _openai_call("call_2", "write", "w"),
+                    _openai_call("call_3", "grep", "g"),
+                ]
+            }
+        )
+
+        results = executor.execute_all(calls)
+
+        self.assertFalse(serial_overlapped)
+        self.assertEqual([result.content for result in results], ["r", "w", "g"])
 
     def test_results_carry_elapsed_ms(self) -> None:
         executor = ToolExecutor([sleeper_tool("slow_read", parallel=True)])
@@ -311,6 +374,7 @@ class ToolTests(unittest.TestCase):
         action, state = node.exec(payload)
 
         self.assertEqual(action, "chat")
+        self.assertEqual(payload["history"], [])
         self.assertEqual(state["history"][0]["role"], "tool")
         self.assertEqual(state["history"][0]["tool_call_id"], "call_1")
 

@@ -96,7 +96,9 @@ class Agent(Node):
         ``stream``/``on_delta`` override streaming for this call only;
         ``payload`` seeds extra business state for the flow.
         """
-        run_context = self._prepare_context(context) or RunContext()
+        run_context = self._prepare_context(context)
+        if run_context is None:
+            run_context = RunContext()
         run_context.add_message("user", text if content is None else content, scope=self._message_scope)
         state = {"input": text, **dict(payload or {})}
         chat_kwargs = dict(state.get("chat_kwargs", {}) or {})
@@ -123,7 +125,9 @@ class Agent(Node):
         context: RunContext | None = None,
     ) -> FlowRunResult:
         """Run the inner flow on a payload and return the full :class:`FlowRunResult`."""
-        context = self._prepare_context(context) or RunContext()
+        context = self._prepare_context(context)
+        if context is None:
+            context = RunContext()
         with context.use_message_scope(self._message_scope):
             return self.flow.run(
                 payload,
@@ -134,7 +138,9 @@ class Agent(Node):
 
     def exec(self, payload: Any) -> ExecResult:
         """Run as a node inside an outer flow, exposing the inner flow's final action."""
-        context = self._prepare_context(get_current_context()) or RunContext()
+        context = self._prepare_context(get_current_context())
+        if context is None:
+            context = RunContext()
         with context.use_message_scope(self._message_scope):
             result = self.flow.run(
                 payload,

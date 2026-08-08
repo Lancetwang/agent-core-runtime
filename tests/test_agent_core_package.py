@@ -1,4 +1,3 @@
-import os
 import unittest
 from typing import Annotated
 
@@ -247,24 +246,11 @@ class AgentCorePackageTests(unittest.TestCase):
         self.assertEqual(agent.chat("hello"), "ok")
         self.assertEqual(model.stream_values, [False])
 
-    def test_agent_can_use_default_env_llm(self) -> None:
-        previous = os.environ.get("LLM_API_KEY")
-        previous_model = os.environ.get("LLM_MODEL")
-        os.environ["LLM_API_KEY"] = "test"
-        os.environ["LLM_MODEL"] = "test-model"
-        try:
-            agent = Agent(instructions="Use the default env-backed LLM.")
-        finally:
-            if previous is None:
-                os.environ.pop("LLM_API_KEY", None)
-            else:
-                os.environ["LLM_API_KEY"] = previous
-            if previous_model is None:
-                os.environ.pop("LLM_MODEL", None)
-            else:
-                os.environ["LLM_MODEL"] = previous_model
+    def test_agent_without_model_defers_provider_setup_until_run(self) -> None:
+        agent = Agent()
 
         self.assertEqual(agent.flow.start.__class__.__name__, "ModelNode")
+        self.assertIsNone(agent.flow.start.model)
 
 
 if __name__ == "__main__":

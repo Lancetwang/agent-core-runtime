@@ -86,11 +86,13 @@ class RunUsage:
 
 @dataclass
 class RunContext:
-    """Runtime context and event stream for one flow execution.
+    """Caller-owned runtime context and event stream.
 
     Business data moves through ``Node.exec(payload)`` and is returned as the
     flow result payload. The run context is intentionally separate: it carries
-    conversation messages, artifacts, metadata, and UI/runtime events.
+    conversation messages, artifacts, metadata, and UI/runtime events. Reuse
+    one context across turns for a conversation, or create a fresh context for
+    an isolated execution.
     """
 
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)

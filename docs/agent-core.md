@@ -9,7 +9,7 @@ The package includes a small OpenAI-compatible `LLM`. Applications own configura
 - `Node` owns one unit of work and returns `(action, payload)`.
 - `Flow` routes each action to at most one next node.
 - `Agent` wraps a flow and is itself a node.
-- `RunContext` belongs to one execution and carries scoped messages, one event stream, cumulative model usage, artifacts, and metadata.
+- `RunContext` is caller-owned and carries scoped messages, one event stream, cumulative model usage, artifacts, and metadata. Reuse it across turns for a conversation, or create a new one for an isolated invocation.
 
 The payload and context are deliberately separate:
 
@@ -36,7 +36,7 @@ If an application needs a different loop, it can create a `Flow` directly and pa
 
 ## Model Boundary
 
-`ChatModel` is the provider-neutral protocol. It returns assistant messages in an OpenAI-style shape:
+`ChatModel` is the runtime's normalized OpenAI-style protocol. A native provider adapter translates to this shape:
 
 ```python
 {
@@ -47,10 +47,10 @@ If an application needs a different loop, it can create a `Flow` directly and pa
 }
 ```
 
-Any model provider can be used by implementing this small protocol.
+Any model provider can be used through an adapter that implements this protocol.
 
 The default OpenAI-compatible adapter requests usage in streaming mode and normalizes it into the assistant message. `ModelNode` records each response in `RunContext.usage`, while `FlowRunResult.usage` exposes the delta for that flow invocation. Applications do not need to rescan trace events to calculate turn totals.
 
 ## Ownership Boundary
 
-The runtime deliberately does not load `.env`, choose a provider, define domain tools, persist sessions, compact conversations, or implement product approval policy. Applications own those decisions and pass ordinary model configuration, tools, payloads, and contexts into the runtime.
+The runtime deliberately does not load `.env`, choose a provider, define domain tools, persist sessions, compact conversations, or implement product approval policy. Applications own those decisions and pass ordinary model configuration, tools, payloads, and contexts into the runtime. Core execution is synchronous; parallel tools use a bounded thread pool, and the same `RunContext` must not be driven concurrently by multiple flows.

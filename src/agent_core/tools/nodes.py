@@ -24,7 +24,7 @@ class ToolCallNode(Node):
         next_action: str = "chat",
     ) -> None:
         super().__init__()
-        self.executor = executor or ToolExecutor()
+        self.executor = executor if executor is not None else ToolExecutor()
         self.assistant_key = assistant_key
         self.messages_key = messages_key
         self.results_key = results_key
@@ -64,7 +64,7 @@ class ToolCallNode(Node):
                 )
 
         state[self.results_key] = results
-        messages = state.setdefault(self.messages_key, [])
+        messages = list(state.get(self.messages_key, []))
         for result in results:
             message = result.to_message()
             messages.append(message)
@@ -74,5 +74,6 @@ class ToolCallNode(Node):
                     result.content,
                     tool_call_id=result.tool_call_id,
                 )
+        state[self.messages_key] = messages
 
         return self.next_action, state

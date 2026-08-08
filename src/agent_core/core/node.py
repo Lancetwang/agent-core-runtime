@@ -166,7 +166,7 @@ class Flow:
         current = self.start
         last_action: Action | None = None
         path: list[str] = []
-        run_context = context or RunContext()
+        run_context = context if context is not None else RunContext()
         trace_options = TraceOptions.from_value(trace)
         event_start = len(run_context.events)
         usage_start = run_context.usage.snapshot()
@@ -182,7 +182,26 @@ class Flow:
 
         try:
             for step in range(1, max_steps + 1):
-                if current is None:
+                node_name = current.__class__.__name__
+                path.append(node_name)
+                run_context.set_execution_context(step=step, node=node_name)
+                run_context.emit("node.start", category="node")
+                try:
+                    last_action, payload = current._exec(payload)
+                except Exception as exc:
+                    error = {"error_type": type(exc).__name__, "message": str(exc)}
+                    run_context.emit("node.error", category="node", data=error)
+                    run_context.emit("flow.error", category="flow", data=error)
+                    raise
+                next_node = current.successors.get(last_action)
+                run_context.set_execution_context(step=step, node=node_name)
+                run_context.emit(
+                    "node.end",
+                    category="node",
+                    action=last_action,
+                    data={"next_node": next_node.__class__.__name__ if next_node else None},
+                )
+                if next_node is None:
                     run_context.set_execution_context(step=step, node=None)
                     run_context.emit("flow.end", category="flow", step=step, node=None)
                     events = run_context.events[event_start:]
@@ -194,27 +213,19 @@ class Flow:
                         context=run_context,
                         usage=run_context.usage.since(usage_start),
                     )
-
-                node_name = current.__class__.__name__
-                path.append(node_name)
-                run_context.set_execution_context(step=step, node=node_name)
-                run_context.emit("node.start", category="node")
-                last_action, payload = current._exec(payload)
-                next_node = current.successors.get(last_action)
-                run_context.set_execution_context(step=step, node=node_name)
-                run_context.emit(
-                    "node.end",
-                    category="node",
-                    action=last_action,
-                    data={"next_node": next_node.__class__.__name__ if next_node else None},
-                )
                 current = next_node
+
+            error = FlowError(
+                f"Flow exceeded max_steps={max_steps}. "
+                "Raise max_steps for long runs, or check the graph for an action cycle that never ends."
+            )
+            run_context.emit(
+                "flow.error",
+                category="flow",
+                data={"error_type": type(error).__name__, "message": str(error)},
+            )
+            raise error
         finally:
             if trace_options.enabled:
                 run_context.on_event = previous_on_event
             reset_current_context(context_token)
-
-        raise FlowError(
-            f"Flow exceeded max_steps={max_steps}. "
-            "Raise max_steps for long runs, or check the graph for an action cycle that never ends."
-        )
