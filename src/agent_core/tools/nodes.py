@@ -35,7 +35,9 @@ class ToolCallNode(Node):
         assistant_message = state.get(self.assistant_key, {})
         tool_calls = self.executor.parse_tool_calls(assistant_message)
         context = get_current_context()
-        results = []
+        # Announce every call first so hosts see the batch the model asked
+        # for; results are then emitted in the same order, whether the calls
+        # ran concurrently or one after another.
         for tool_call in tool_calls:
             if context is not None:
                 context.emit(
@@ -47,8 +49,8 @@ class ToolCallNode(Node):
                         "arguments": tool_call.arguments,
                     },
                 )
-            result = self.executor.execute(tool_call)
-            results.append(result)
+        results = self.executor.execute_all(tool_calls)
+        for result in results:
             if context is not None:
                 context.emit(
                     "tool.result",
@@ -57,6 +59,7 @@ class ToolCallNode(Node):
                         "tool_call_id": result.tool_call_id,
                         "content": result.content,
                         "is_error": result.is_error,
+                        "elapsed_ms": result.elapsed_ms,
                     },
                 )
 

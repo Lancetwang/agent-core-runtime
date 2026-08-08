@@ -23,6 +23,11 @@ class Tool:
     description: str
     parameters: dict[str, Any]
     fn: Callable[..., Any]
+    #: True when the tool is safe to run concurrently with other calls in the
+    #: same batch: read-only, no shared state, no external side effects.
+    #: Serial tools (``parallel=False``) keep batch execution ordered and
+    #: exclusive, which is the default.
+    parallel: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.fn(*args, **kwargs)
@@ -43,7 +48,12 @@ class Tool:
         return self.fn(**kwargs)
 
 
-def tool(description: str, *, name: str | None = None) -> Callable[[Callable[..., Any]], Tool]:
+def tool(
+    description: str,
+    *,
+    name: str | None = None,
+    parallel: bool = False,
+) -> Callable[[Callable[..., Any]], Tool]:
     """Turn a typed Python function into a :class:`Tool`.
 
     The JSON schema is derived from the signature: parameter types map to
@@ -51,6 +61,9 @@ def tool(description: str, *, name: str | None = None) -> Callable[[Callable[...
     and defaults mark parameters optional. Raises
     :class:`ToolDefinitionError` when a signature cannot be converted —
     every parameter and the return value must be annotated.
+
+    Pass ``parallel=True`` for read-only tools so a batch of calls to them can
+    run concurrently instead of one after another.
     """
 
     def decorator(fn: Callable[..., Any]) -> Tool:
@@ -100,6 +113,7 @@ def tool(description: str, *, name: str | None = None) -> Callable[[Callable[...
             description=description,
             parameters=parameters,
             fn=fn,
+            parallel=parallel,
         )
 
     return decorator

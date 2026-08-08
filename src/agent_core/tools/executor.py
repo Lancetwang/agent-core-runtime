@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +48,8 @@ class ToolResult:
     tool_call_id: str
     content: str
     is_error: bool = False
+    #: Wall-clock execution time in milliseconds, measured inside ``execute``.
+    elapsed_ms: float | None = None
 
     def to_message(self) -> dict[str, str]:
         """Return the OpenAI-style ``role: tool`` message for this result."""
@@ -64,13 +68,19 @@ class ToolExecutor:
     model can read the error text and correct itself.
     """
 
-    def __init__(self, tools: Sequence[Tool] | None = None) -> None:
+    def __init__(
+        self,
+        tools: Sequence[Tool] | None = None,
+        *,
+        max_workers: int = 4,
+    ) -> None:
         self.tools = list(tools or [])
         names = [tool.name for tool in self.tools]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
             raise ValueError(f"Duplicate tool names: {', '.join(duplicates)}")
         self.tool_map = {tool.name: tool for tool in self.tools}
+        self.max_workers = max_workers
 
     def parse_tool_calls(self, assistant_message: dict[str, Any]) -> list[ToolCall]:
         """Extract tool calls from an assistant message; empty list when there are none."""
@@ -81,6 +91,7 @@ class ToolExecutor:
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
         """Run one tool call and return its result or a readable error."""
+        started = time.monotonic()
         tool = self.tool_map.get(tool_call.name)
         if tool is None:
             known = ", ".join(sorted(self.tool_map)) or "none"
@@ -88,6 +99,7 @@ class ToolExecutor:
                 tool_call_id=tool_call.id,
                 content=f"Tool '{tool_call.name}' not found. Available tools: {known}.",
                 is_error=True,
+                elapsed_ms=(time.monotonic() - started) * 1000,
             )
 
         try:
@@ -98,17 +110,40 @@ class ToolExecutor:
                 tool_call_id=tool_call.id,
                 content=f"Tool '{tool_call.name}' failed: {type(exc).__name__}: {exc}",
                 is_error=True,
+                elapsed_ms=(time.monotonic() - started) * 1000,
             )
 
         return ToolResult(
             tool_call_id=tool_call.id,
             content=content,
             is_error=False,
+            elapsed_ms=(time.monotonic() - started) * 1000,
         )
 
     def execute_all(self, tool_calls: Sequence[ToolCall]) -> list[ToolResult]:
-        """Run every tool call in order and collect the results."""
-        return [self.execute(tool_call) for tool_call in tool_calls]
+        """Run every tool call and collect the results in the original order.
+
+        Calls to tools marked ``parallel`` run concurrently on a bounded thread
+        pool; everything else runs one at a time in declaration order. Results
+        are returned in ``tool_calls`` order either way, so hosts can append
+        them to the conversation without re-sorting.
+        """
+        if not tool_calls:
+            return []
+        futures: dict[int, Future[ToolResult]] = {}
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            for index, call in enumerate(tool_calls):
+                tool = self.tool_map.get(call.name)
+                if tool is not None and tool.parallel:
+                    futures[index] = pool.submit(self.execute, call)
+            results: list[ToolResult] = []
+            for index, call in enumerate(tool_calls):
+                future = futures.get(index)
+                if future is not None:
+                    results.append(future.result())
+                else:
+                    results.append(self.execute(call))
+        return results
 
 
 def _safe_json_loads(value: str) -> Any:

@@ -4,6 +4,22 @@ All notable changes to `friday-agent-core` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.8] - 2026-08-07
+
+### Added
+
+- `Tool.parallel` flag (also settable through the `@tool(parallel=True)`
+  decorator) marks read-only tools that are safe to run concurrently.
+- `ToolExecutor.execute_all` now executes parallel-capable calls in a bounded
+  thread pool (`max_workers`, default 4) while serial tools keep running one
+  at a time in declaration order. Results are always returned in the original
+  call order, so hosts can append them to the conversation without re-sorting.
+- `ToolCallNode` announces every `tool.call` before executing the batch and
+  emits `tool.result` events in declaration order afterwards.
+- `ToolResult.elapsed_ms` and the `tool.result` event data now carry the
+  wall-clock execution time of each call, measured inside the executor —
+  accurate per call even when the batch runs concurrently.
+
 ## [0.1.6] - 2026-07-31
 
 ### Added

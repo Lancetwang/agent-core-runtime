@@ -1,5 +1,7 @@
+import json
+import time
 import unittest
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from agent_core.core import Flow
 from agent_core.tools import Tool, ToolCallNode, ToolDefinitionError, ToolExecutor, tool
@@ -22,7 +24,131 @@ def weather_tool() -> Tool:
     )
 
 
+def sleeper_tool(name: str, *, parallel: bool) -> Tool:
+    def slow(value: str) -> str:
+        time.sleep(0.15)
+        return f"{name}:{value}"
+
+    return Tool(
+        name=name,
+        description="Sleeps briefly and echoes its input.",
+        parameters={
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+        },
+        fn=slow,
+        parallel=parallel,
+    )
+
+
+def _openai_call(call_id: str, name: str, value: str) -> dict[str, Any]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps({"value": value})},
+    }
+
+
 class ToolTests(unittest.TestCase):
+    def test_parallel_tools_run_concurrently(self) -> None:
+        executor = ToolExecutor([sleeper_tool("slow_read", parallel=True)])
+        assistant = {
+            "tool_calls": [_openai_call(f"call_{i}", "slow_read", str(i)) for i in range(3)]
+        }
+
+        started = time.monotonic()
+        results = executor.execute_all(executor.parse_tool_calls(assistant))
+        elapsed = time.monotonic() - started
+
+        # Three 150ms sleeps in parallel finish well under the 450ms serial sum.
+        self.assertLess(elapsed, 0.4)
+        self.assertEqual(
+            [result.content for result in results],
+            ["slow_read:0", "slow_read:1", "slow_read:2"],
+        )
+
+    def test_serial_tools_run_one_after_another(self) -> None:
+        executor = ToolExecutor([sleeper_tool("slow_write", parallel=False)])
+        assistant = {
+            "tool_calls": [_openai_call(f"call_{i}", "slow_write", str(i)) for i in range(3)]
+        }
+
+        started = time.monotonic()
+        results = executor.execute_all(executor.parse_tool_calls(assistant))
+        elapsed = time.monotonic() - started
+
+        self.assertGreaterEqual(elapsed, 0.4)
+        self.assertEqual(
+            [result.content for result in results],
+            ["slow_write:0", "slow_write:1", "slow_write:2"],
+        )
+
+    def test_mixed_batch_preserves_result_order(self) -> None:
+        executor = ToolExecutor(
+            [
+                sleeper_tool("read", parallel=True),
+                sleeper_tool("write", parallel=False),
+                sleeper_tool("grep", parallel=True),
+            ]
+        )
+        assistant = {
+            "tool_calls": [
+                _openai_call("call_1", "write", "w"),
+                _openai_call("call_2", "grep", "g"),
+                _openai_call("call_3", "read", "r"),
+            ]
+        }
+
+        results = executor.execute_all(executor.parse_tool_calls(assistant))
+
+        self.assertEqual(
+            [(result.tool_call_id, result.content) for result in results],
+            [("call_1", "write:w"), ("call_2", "grep:g"), ("call_3", "read:r")],
+        )
+
+    def test_results_carry_elapsed_ms(self) -> None:
+        executor = ToolExecutor([sleeper_tool("slow_read", parallel=True)])
+        assistant = {"tool_calls": [_openai_call("call_1", "slow_read", "x")]}
+
+        results = executor.execute_all(executor.parse_tool_calls(assistant))
+
+        self.assertIsNotNone(results[0].elapsed_ms)
+        self.assertGreaterEqual(results[0].elapsed_ms, 100)
+
+    def test_tool_call_node_emits_batch_events_in_order_with_elapsed_ms(self) -> None:
+        node = ToolCallNode(
+            executor=ToolExecutor(
+                [
+                    sleeper_tool("slow_read", parallel=True),
+                    sleeper_tool("slow_write", parallel=False),
+                ]
+            ),
+            next_action="chat",
+        )
+        payload = {
+            "assistant_message": {
+                "tool_calls": [
+                    _openai_call("call_1", "slow_read", "r"),
+                    _openai_call("call_2", "slow_write", "w"),
+                ]
+            },
+            "history": [],
+        }
+
+        result = Flow(node).run(payload, trace=True)
+        tool_events = [event for event in result.context.events if event.category == "tool"]
+
+        self.assertEqual(
+            [event.type for event in tool_events],
+            ["tool.call", "tool.call", "tool.result", "tool.result"],
+        )
+        self.assertEqual(
+            [event.data["tool_call_id"] for event in tool_events],
+            ["call_1", "call_2", "call_1", "call_2"],
+        )
+        self.assertIsNotNone(tool_events[2].data.get("elapsed_ms"))
+        self.assertEqual(tool_events[2].data["is_error"], False)
     def test_tool_executes_function(self) -> None:
         tool = weather_tool()
 
