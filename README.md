@@ -113,6 +113,21 @@ $env:LLM_BASE_URL = "https://api.example.com"
 $env:LLM_MODEL = "model-name"
 ```
 
+Applications with their own configuration or secret store can inject values directly:
+
+```python
+from agent_core import LLM
+
+def build_model(api_key: str) -> LLM:
+    return LLM(
+        api_key=api_key,
+        base_url="https://api.example.com",
+        model="model-name",
+    )
+```
+
+Core deliberately does not discover or parse `.env` files. A consuming application may still load one itself, use an OS keychain, read a database, or implement `ChatModel`; only the normalized model boundary matters to the runtime.
+
 ## Quick Agent
 
 ```python

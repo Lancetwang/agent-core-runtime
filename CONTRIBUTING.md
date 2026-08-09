@@ -12,8 +12,9 @@ cd agent-core-runtime
 uv sync
 ```
 
-Model-backed examples need credentials in the environment or a local `.env`
-(see `.env.example`). The test suite uses fakes and needs no API key.
+Model-backed examples need credentials passed explicitly or exported in the
+process environment. The runtime does not load configuration files. The test
+suite uses fakes and needs no API key.
 
 ## Running checks
 

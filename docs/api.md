@@ -165,14 +165,15 @@ cannot be converted.
 returns the OpenAI `tools` entry; `execute(**kwargs)` invokes the function;
 the instance itself stays callable.
 
-### `ToolExecutor(tools)`
+### `ToolExecutor(tools, *, max_workers=4)`
 
 Executes model tool calls. Model-caused failures never raise: unknown tools
 (the error lists available names) and tool exceptions come back as
 `ToolResult(is_error=True)` so the model can self-correct.
 `parse_tool_calls(message)` extracts `ToolCall`s; `execute` / `execute_all`
-run them. Consecutive `parallel=True` tools form concurrent batches; serial
-tools are exclusive barriers. During execution, `get_current_tool_call()` exposes the active call
+run them. Consecutive `parallel=True` tools form concurrent batches on the
+bounded worker pool; serial tools are exclusive barriers. Results retain the
+model's original call order. During execution, `get_current_tool_call()` exposes the active call
 to tools that need to correlate transient progress with a UI entry.
 
 ### `ToolCallNode`

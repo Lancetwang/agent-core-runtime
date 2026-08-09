@@ -115,6 +115,21 @@ $env:LLM_BASE_URL = "https://api.example.com"
 $env:LLM_MODEL = "model-name"
 ```
 
+有自己的配置系统或密钥存储时，可以直接通过构造参数注入：
+
+```python
+from agent_core import LLM
+
+def build_model(api_key: str) -> LLM:
+    return LLM(
+        api_key=api_key,
+        base_url="https://api.example.com",
+        model="model-name",
+    )
+```
+
+Core 不负责发现或解析 `.env` 文件。上层应用仍可自行加载 `.env`、系统钥匙串或数据库，也可以直接实现 `ChatModel`；Runtime 只依赖归一化后的模型边界。
+
 ## 快速声明 Agent
 
 ```python
