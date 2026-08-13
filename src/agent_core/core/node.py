@@ -17,7 +17,29 @@ from agent_core.core.trace import (
 )
 
 Action = str
-ExecResult = tuple[Action, Any]
+
+
+class ExecResult(tuple):
+    """Explicit ``(action, payload)`` routing result of one node execution.
+
+    Subclasses ``tuple``, so existing destructuring (``action, payload =
+    node.exec(...)``) keeps working, but instances are distinguishable from
+    plain data tuples. ``CallableNode`` treats a returned :class:`ExecResult`
+    as routing; an ordinary ``(str, value)`` tuple stays business payload.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, action: Action, payload: Any) -> ExecResult:
+        return super().__new__(cls, (action, payload))
+
+    @property
+    def action(self) -> Action:
+        return self[0]
+
+    @property
+    def payload(self) -> Any:
+        return self[1]
 
 
 class FlowError(RuntimeError):
@@ -91,9 +113,10 @@ class Node:
 class CallableNode(Node):
     """Adapt a plain function into a node.
 
-    The function receives the payload. If it returns ``(action, payload)``
-    that pair is used as-is; any other return value is wrapped as
-    ``("default", value)``.
+    The function receives the payload. If it returns ``ExecResult(action,
+    payload)`` that pair is used as-is; any other return value — including a
+    plain ``(str, value)`` tuple — is treated as business payload and wrapped
+    as ``("default", value)``.
     """
 
     def __init__(
@@ -110,17 +133,9 @@ class CallableNode(Node):
 
     def exec(self, payload: Any) -> ExecResult:
         result = self.fn(payload)
-        if self._is_exec_result(result):
+        if isinstance(result, ExecResult):
             return result
-        return "default", result
-
-    @staticmethod
-    def _is_exec_result(value: Any) -> bool:
-        return (
-            isinstance(value, tuple)
-            and len(value) == 2
-            and isinstance(value[0], str)
-        )
+        return ExecResult("default", result)
 
 
 @dataclass(frozen=True)

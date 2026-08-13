@@ -2,6 +2,7 @@ import unittest
 
 from agent_core.core import (
     CallableNode,
+    ExecResult,
     Flow,
     FlowError,
     Node,
@@ -13,8 +14,8 @@ from agent_core.core import (
 
 class CoreFlowTests(unittest.TestCase):
     def test_action_routes_to_one_successor(self) -> None:
-        def classify(payload: dict) -> tuple[str, dict]:
-            return "question", payload
+        def classify(payload: dict) -> ExecResult:
+            return ExecResult("question", payload)
 
         def answer(payload: dict) -> dict:
             payload["reply"] = "ok"
@@ -29,6 +30,23 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual(result.action, "default")
         self.assertEqual(result.payload["reply"], "ok")
         self.assertEqual(result.path, ["CallableNode", "CallableNode"])
+
+    def test_plain_tuple_return_stays_payload(self) -> None:
+        result = Flow(
+            CallableNode(lambda payload: ("user_id", "123"))
+        ).run({})
+
+        self.assertEqual(result.action, "default")
+        self.assertEqual(result.payload, ("user_id", "123"))
+
+    def test_exec_result_routes_and_payload_passes_through(self) -> None:
+        result = Flow(
+            CallableNode(lambda payload: ExecResult("next", payload))
+        ).run({})
+
+        self.assertEqual(result.action, "next")
+        self.assertEqual(result.payload, {})
+        self.assertIsInstance(result.action, str)
 
     def test_retry(self) -> None:
         calls = {"count": 0}

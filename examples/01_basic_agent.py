@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agent_core import Agent, CallableNode, Flow, make_trace_options
+from agent_core import Agent, CallableNode, ExecResult, Flow, make_trace_options
 
 
-def classify(payload: dict) -> tuple[str, dict]:
+def classify(payload: dict) -> ExecResult:
     text = str(payload["input"]).strip()
     payload["kind"] = "question" if text.endswith("?") else "statement"
-    return payload["kind"], payload
+    return ExecResult(payload["kind"], payload)
 
 
 def answer_question(payload: dict) -> dict:

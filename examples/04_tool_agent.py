@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from agent_core import (
     Agent,
     CallableNode,
+    ExecResult,
     Flow,
     ModelNode,
     RunContext,
@@ -54,11 +55,11 @@ def tell_joke(
     }
 
 
-def prepare_final_response(payload: dict) -> tuple[str, dict]:
+def prepare_final_response(payload: dict) -> ExecResult:
     state = dict(payload)
     if state.get("stream"):
         state["chat_kwargs"] = {"stream": True, "on_delta": print_delta}
-    return "chat", state
+    return ExecResult("chat", state)
 
 
 def print_delta(text: str) -> None:

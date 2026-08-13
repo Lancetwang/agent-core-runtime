@@ -30,8 +30,15 @@ successor ends the flow. Constructor options: `max_retries`, `wait` (retry
 ### `CallableNode(fn)`
 
 Adapts a plain function into a node. If `fn(payload)` returns
-`(action, payload)` it is used as-is; any other value becomes
-`("default", value)`.
+`ExecResult(action, payload)` it is used as-is; any other value — including
+a plain `(str, value)` tuple — becomes `("default", value)`.
+
+### `ExecResult`
+
+Explicit `(action, payload)` routing result. It is a `tuple` subclass, so
+`action, payload = result` keeps working, but only `ExecResult` instances
+returned from a `CallableNode` function are treated as routing; ordinary
+tuples stay business payload.
 
 ### `Flow(start)`
 

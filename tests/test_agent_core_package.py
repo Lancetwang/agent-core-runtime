@@ -1,7 +1,7 @@
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, CallableNode, Flow, ModelNode, Node, ToolRouterNode, tool
+from agent_core import Agent, CallableNode, ExecResult, Flow, ModelNode, Node, ToolRouterNode, tool
 
 
 class AgentCorePackageTests(unittest.TestCase):
@@ -124,7 +124,7 @@ class AgentCorePackageTests(unittest.TestCase):
 
     def test_agent_can_preserve_inner_flow_action(self) -> None:
         inner_agent = Agent(
-            Flow(CallableNode(lambda payload: ("special", payload))),
+            Flow(CallableNode(lambda payload: ExecResult("special", payload))),
         )
         target = CallableNode(lambda payload: {"ok": True})
         inner_agent - "special" >> target
@@ -141,7 +141,7 @@ class AgentCorePackageTests(unittest.TestCase):
 
     def test_nested_agent_flow_inherits_trace(self) -> None:
         inner_agent = Agent(
-            Flow(CallableNode(lambda payload: ("done", payload))),
+            Flow(CallableNode(lambda payload: ExecResult("done", payload))),
         )
 
         result = Flow(inner_agent).run({}, trace=True)

@@ -6,6 +6,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `CallableNode` no longer guesses routing from tuple shape: a function must
+  return an explicit `ExecResult(action, payload)` to route. Plain
+  `(str, value)` tuples are now treated as business payload instead of being
+  silently reinterpreted as `(action, payload)`.
+
 ### Fixed
 
 - Tool schema generation now unwraps `Annotated` inside containers

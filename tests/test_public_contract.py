@@ -11,6 +11,7 @@ import unittest
 import agent_core
 from agent_core import (
     CallableNode,
+    ExecResult,
     Flow,
     FlowError,
     Node,
@@ -57,7 +58,7 @@ class WiringValidationTests(unittest.TestCase):
             Flow().run({})
 
     def test_duplicate_action_edge_raises(self) -> None:
-        router = CallableNode(lambda payload: ("go", payload))
+        router = CallableNode(lambda payload: ExecResult("go", payload))
         first = CallableNode(lambda payload: payload)
         second = CallableNode(lambda payload: payload)
         router - "go" >> first
@@ -65,7 +66,7 @@ class WiringValidationTests(unittest.TestCase):
             router - "go" >> second
 
     def test_rewiring_the_same_successor_is_idempotent(self) -> None:
-        router = CallableNode(lambda payload: ("go", payload))
+        router = CallableNode(lambda payload: ExecResult("go", payload))
         target = CallableNode(lambda payload: payload)
         router - "go" >> target
         router - "go" >> target

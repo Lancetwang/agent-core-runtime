@@ -156,10 +156,12 @@ print(answer)
 Use explicit nodes when the agent loop is not a simple chat loop:
 
 ```python
-from agent_core import Agent, CallableNode, Flow
+from agent_core import Agent, CallableNode, ExecResult, Flow
 
-def classify(payload: dict) -> tuple[str, dict]:
-    return "question" if payload["text"].endswith("?") else "statement", payload
+def classify(payload: dict) -> ExecResult:
+    return ExecResult(
+        "question" if payload["text"].endswith("?") else "statement", payload
+    )
 
 def answer(payload: dict) -> dict:
     payload["answer"] = "received"
