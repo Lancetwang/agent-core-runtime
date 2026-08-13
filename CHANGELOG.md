@@ -15,6 +15,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   Nested runs inherit the enclosing run's cancel event.
 - `python -m agent_core chat` starts an interactive chat REPL built from
   `Agent` + `LLM` (`--instructions`, `--max-steps`, `--no-stream`).
+- CI now lints with ruff (config committed in `pyproject.toml`) and runs the
+  test matrix on Windows as well as Ubuntu.
 
 ### Changed
 

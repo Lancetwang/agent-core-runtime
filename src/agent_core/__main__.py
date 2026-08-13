@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from agent_core import Agent, CallableNode, Flow, FlowError, LLM, __version__
+from agent_core import LLM, Agent, CallableNode, Flow, FlowError, __version__
 
 
 def main(argv: list[str] | None = None) -> int:

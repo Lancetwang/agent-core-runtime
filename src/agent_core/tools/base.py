@@ -4,7 +4,16 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import UnionType
-from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints, is_typeddict
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+)
 
 
 class ToolDefinitionError(ValueError):

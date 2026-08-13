@@ -5,7 +5,7 @@ from typing import Any
 
 from agent_core.core import ExecResult, Flow, Node, PayloadKeys
 from agent_core.core.context import get_current_context
-from agent_core.llm.client import ChatModel, LLM, Message
+from agent_core.llm.client import LLM, ChatModel, Message
 from agent_core.tools import Tool, ToolCallNode, ToolExecutor
 
 MessageBuilder = Callable[[Any], Sequence[Message]]
@@ -128,7 +128,11 @@ class ModelNode(Node):
                 context.add_message(
                     message["role"],
                     message.get("content", ""),
-                    **{key: value for key, value in message.items() if key not in {"role", "content"}},
+                    **{
+                        key: value
+                        for key, value in message.items()
+                        if key not in {"role", "content"}
+                    },
                 )
             return list(context.get_messages())
         return list(state.get(self.messages_key, []))
@@ -147,7 +151,9 @@ class ModelNode(Node):
         if context:
             kwargs["on_delta"] = _delta_callback(context, on_delta)
             if on_reasoning_delta is not None or isinstance(model, LLM):
-                kwargs["on_reasoning_delta"] = _reasoning_delta_callback(context, on_reasoning_delta)
+                kwargs["on_reasoning_delta"] = _reasoning_delta_callback(
+                    context, on_reasoning_delta
+                )
         elif on_delta:
             kwargs["on_delta"] = on_delta
         if not context and on_reasoning_delta:
@@ -254,7 +260,10 @@ def _delta_callback(context: Any, callback: Callable[[str], None] | None) -> Cal
     return on_delta
 
 
-def _reasoning_delta_callback(context: Any, callback: Callable[[str], None] | None) -> Callable[[str], None]:
+def _reasoning_delta_callback(
+    context: Any,
+    callback: Callable[[str], None] | None,
+) -> Callable[[str], None]:
     def on_delta(text: str) -> None:
         if text:
             context.notify("model.reasoning.delta", category="model", data={"content": text})

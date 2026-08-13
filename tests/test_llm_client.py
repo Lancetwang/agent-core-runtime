@@ -146,7 +146,10 @@ class LLMTests(unittest.TestCase):
         self.assertEqual(message["usage"]["total_tokens"], 7)
         self.assertNotIn("tool_calls", message)
         self.assertTrue(client.chat.completions.last_request["stream"])
-        self.assertEqual(client.chat.completions.last_request["stream_options"], {"include_usage": True})
+        self.assertEqual(
+            client.chat.completions.last_request["stream_options"],
+            {"include_usage": True},
+        )
 
     def test_streaming_chat_message_preserves_tool_calls(self) -> None:
         chunks = [

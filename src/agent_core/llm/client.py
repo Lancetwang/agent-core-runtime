@@ -98,7 +98,10 @@ class LLM:
             **kwargs,
         }
         if stream:
-            request["stream_options"] = {"include_usage": True, **dict(request.get("stream_options") or {})}
+            request["stream_options"] = {
+                "include_usage": True,
+                **dict(request.get("stream_options") or {}),
+            }
         if tools:
             request["tools"] = list(tools)
         if tool_choice is not None:

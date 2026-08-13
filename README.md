@@ -252,6 +252,7 @@ In multi-agent flows, `RunContext` is shared for events, usage, artifacts, and m
 ## Validate
 
 ```powershell
+uv run ruff check src tests examples
 uv run python -m unittest discover -s tests
 uv run python -m compileall src tests examples
 ```

@@ -51,7 +51,13 @@ def build_messages(payload: dict) -> list[dict]:
 class LlmNodeTests(unittest.TestCase):
     def test_model_node_stores_assistant_message(self) -> None:
         model = FakeChatModel(
-            [{"role": "assistant", "content": "hello", "usage": {"prompt_tokens": 2, "completion_tokens": 1}}]
+            [
+                {
+                    "role": "assistant",
+                    "content": "hello",
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+                }
+            ]
         )
         node = ModelNode(
             model=model,
@@ -126,7 +132,12 @@ class LlmNodeTests(unittest.TestCase):
 
     def test_model_node_observes_full_payload_without_retaining_it(self) -> None:
         model = FakeChatModel([{"role": "assistant", "content": "hello"}])
-        node = ModelNode(model=model, messages=build_messages, tools=[get_weather], chat_kwargs={"temperature": 0})
+        node = ModelNode(
+            model=model,
+            messages=build_messages,
+            tools=[get_weather],
+            chat_kwargs={"temperature": 0},
+        )
         observations = []
         context = RunContext()
         context.on_observation = observations.append
@@ -324,7 +335,10 @@ class LlmNodeTests(unittest.TestCase):
             ["system", "user", "assistant", "tool", "assistant"],
         )
         self.assertIn("tool_calls", result.context.messages[2])
-        self.assertEqual(result.context.messages[2]["reasoning_content"], "I should use the weather tool.")
+        self.assertEqual(
+            result.context.messages[2]["reasoning_content"],
+            "I should use the weather tool.",
+        )
         self.assertNotIn("tool_calls", result.context.messages[-1])
         self.assertNotIn("reasoning_content", result.context.messages[-1])
         self.assertEqual(

@@ -4,9 +4,17 @@ import time
 import unittest
 from typing import Annotated, Any, Literal, TypedDict
 
-from agent_core.core import Flow
 from agent_core import FlowCancelled, RunContext
-from agent_core.tools import Tool, ToolCall, ToolCallNode, ToolDefinitionError, ToolExecutor, get_current_tool_call, tool
+from agent_core.core import Flow
+from agent_core.tools import (
+    Tool,
+    ToolCall,
+    ToolCallNode,
+    ToolDefinitionError,
+    ToolExecutor,
+    get_current_tool_call,
+    tool,
+)
 
 
 def get_weather(city: str) -> dict[str, str]:
@@ -464,7 +472,10 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(tool_events[0].data["name"], "get_weather")
         self.assertNotIn("arguments", tool_events[0].data)
         self.assertFalse(tool_events[1].data["is_error"])
-        self.assertEqual(tool_events[1].data["content_length"], len(result.context.messages[-1]["content"]))
+        self.assertEqual(
+            tool_events[1].data["content_length"],
+            len(result.context.messages[-1]["content"]),
+        )
         self.assertEqual(
             [event.type for event in runtime_tool_events],
             ["tool.call", "tool.result"],

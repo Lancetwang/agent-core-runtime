@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+import time
+import uuid
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any
-import time
-import uuid
 
 
 @dataclass(frozen=True)

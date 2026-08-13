@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
-from typing import Annotated
 import unittest
+from pathlib import Path
+from typing import Annotated
 
 import agent_core
 from agent_core import (

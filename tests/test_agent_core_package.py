@@ -218,9 +218,18 @@ class AgentCorePackageTests(unittest.TestCase):
         result = Flow(first).run({})
 
         self.assertEqual(result.path, ["Agent", "Agent"])
-        self.assertEqual([message["content"] for message in first_model.requests[0]], ["First role."])
-        self.assertEqual([message["content"] for message in second_model.requests[0]], ["Second role."])
-        self.assertNotIn("First role.", [message["content"] for message in second_model.requests[0]])
+        self.assertEqual(
+            [message["content"] for message in first_model.requests[0]],
+            ["First role."],
+        )
+        self.assertEqual(
+            [message["content"] for message in second_model.requests[0]],
+            ["Second role."],
+        )
+        self.assertNotIn(
+            "First role.",
+            [message["content"] for message in second_model.requests[0]],
+        )
         self.assertEqual(len(result.context.message_scopes), 2)
 
     def test_chat_works_without_instructions(self) -> None:

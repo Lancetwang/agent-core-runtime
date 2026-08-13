@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import contextvars
 import json
+import threading
 import time
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-import threading
 from typing import Any
 
-from agent_core.core.node import FlowCancelled, _FLOW_CANCEL
+from agent_core.core.node import _FLOW_CANCEL, FlowCancelled
 from agent_core.tools.base import Tool
 
 

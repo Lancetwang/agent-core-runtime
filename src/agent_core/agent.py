@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any
 import threading
 import uuid
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from agent_core.core import (
     Action,
@@ -74,7 +74,8 @@ class Agent(Node):
         self._instruction_marker = f"agent_core.instructions.{self._message_scope}"
         if action is None or (action is not _INHERIT_ACTION and not isinstance(action, str)):
             raise TypeError(
-                "action must be a string when provided; omit it to inherit the inner flow's final action."
+                "action must be a string when provided; omit it to inherit "
+                "the inner flow's final action."
             )
         self.action = action
         self.max_steps = max_steps
@@ -107,7 +108,11 @@ class Agent(Node):
         run_context = self._prepare_context(context)
         if run_context is None:
             run_context = RunContext()
-        run_context.add_message("user", text if content is None else content, scope=self._message_scope)
+        run_context.add_message(
+            "user",
+            text if content is None else content,
+            scope=self._message_scope,
+        )
         state = {PayloadKeys.INPUT: text, **dict(payload or {})}
         chat_kwargs = dict(state.get(PayloadKeys.CHAT_KWARGS, {}) or {})
         if stream is not None:

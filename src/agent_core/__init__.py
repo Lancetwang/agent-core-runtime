@@ -3,7 +3,8 @@
 Distributed on PyPI as ``friday-agent-core``; the import name is ``agent_core``.
 """
 
-from importlib.metadata import PackageNotFoundError, version as _version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
 
 from agent_core.agent import Agent
 

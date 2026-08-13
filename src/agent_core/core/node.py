@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
-import threading
-import time
 
 from agent_core.core.context import (
     RunContext,
@@ -287,7 +287,11 @@ class Flow:
                         action=last_action,
                         payload=payload,
                         path=path,
-                        trace=[event for event in trace_events if trace_options.includes(event.category)],
+                        trace=[
+                            event
+                            for event in trace_events
+                            if trace_options.includes(event.category)
+                        ],
                         context=run_context,
                         usage=run_context.usage.since(usage_start),
                     )
@@ -300,7 +304,8 @@ class Flow:
             )
             error = FlowError(
                 f"Flow exceeded max_steps={budget}.{nested_note} "
-                "Raise max_steps for long runs, or check the graph for an action cycle that never ends."
+                "Raise max_steps for long runs, or check the graph for "
+                "an action cycle that never ends."
             )
             run_context.emit(
                 "flow.error",
