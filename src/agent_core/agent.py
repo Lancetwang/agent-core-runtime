@@ -84,7 +84,7 @@ class Agent(Node):
         *,
         content: Any | None = None,
         context: RunContext | None = None,
-        max_steps: int = 100,
+        max_steps: int | None = None,
         trace: TraceOptions | bool | None = None,
         stream: bool | None = None,
         on_delta: Any = None,
@@ -94,7 +94,8 @@ class Agent(Node):
 
         Reuse the same ``context`` across calls to hold a conversation.
         ``stream``/``on_delta`` override streaming for this call only;
-        ``payload`` seeds extra business state for the flow.
+        ``payload`` seeds extra business state for the flow; ``max_steps``
+        overrides the agent's constructor budget for this call only.
         """
         run_context = self._prepare_context(context)
         if run_context is None:
@@ -120,11 +121,17 @@ class Agent(Node):
         self,
         payload: Any = None,
         *,
-        max_steps: int = 100,
+        max_steps: int | None = None,
         trace: TraceOptions | bool | None = None,
         context: RunContext | None = None,
     ) -> FlowRunResult:
-        """Run the inner flow on a payload and return the full :class:`FlowRunResult`."""
+        """Run the inner flow on a payload and return the full :class:`FlowRunResult`.
+
+        ``max_steps`` defaults to the agent's constructor budget; inside an
+        outer flow the remaining outer budget also applies.
+        """
+        if max_steps is None:
+            max_steps = self.max_steps
         context = self._prepare_context(context)
         if context is None:
             context = RunContext()

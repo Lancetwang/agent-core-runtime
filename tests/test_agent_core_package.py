@@ -1,7 +1,7 @@
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, CallableNode, ExecResult, Flow, ModelNode, Node, ToolRouterNode, tool
+from agent_core import Agent, CallableNode, ExecResult, Flow, FlowError, ModelNode, Node, ToolRouterNode, tool
 
 
 class AgentCorePackageTests(unittest.TestCase):
@@ -251,6 +251,44 @@ class AgentCorePackageTests(unittest.TestCase):
 
         self.assertEqual(agent.flow.start.__class__.__name__, "ModelNode")
         self.assertIsNone(agent.flow.start.model)
+
+    def test_agent_run_respects_constructor_max_steps(self) -> None:
+        looping = CallableNode(lambda payload: payload)
+        looping >> looping
+        agent = Agent(Flow(looping), max_steps=3)
+
+        with self.assertRaisesRegex(FlowError, "max_steps=3"):
+            agent.run({})
+
+    def test_agent_call_level_max_steps_overrides_constructor(self) -> None:
+        first = CallableNode(lambda payload: payload)
+        second = CallableNode(lambda payload: {**payload, "done": True})
+        first >> second
+        agent = Agent(Flow(first), max_steps=1)
+
+        with self.assertRaises(FlowError):
+            agent.run({})
+
+        result = agent.run({}, max_steps=2)
+        self.assertTrue(result.payload["done"])
+
+    def test_nested_agent_respects_outer_step_budget(self) -> None:
+        looping = CallableNode(lambda payload: payload)
+        looping >> looping
+        inner = Agent(Flow(looping), max_steps=100)
+
+        with self.assertRaisesRegex(FlowError, "max_steps=4"):
+            Flow(inner).run({}, max_steps=5)
+
+    def test_nested_agent_that_fits_budget_completes(self) -> None:
+        inner = Agent(Flow(CallableNode(lambda payload: payload)), max_steps=100)
+        tail = CallableNode(lambda payload: {**payload, "tail": True})
+        inner >> tail
+
+        result = Flow(inner).run({}, max_steps=10)
+
+        self.assertTrue(result.payload["tail"])
+        self.assertEqual(result.path, ["Agent", "CallableNode"])
 
 
 if __name__ == "__main__":

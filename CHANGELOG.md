@@ -12,6 +12,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   return an explicit `ExecResult(action, payload)` to route. Plain
   `(str, value)` tuples are now treated as business payload instead of being
   silently reinterpreted as `(action, payload)`.
+- `Agent.run` / `Agent.chat` now default their `max_steps` to the
+  constructor budget instead of an independent hard-coded 100.
+- Nested flows share one step budget: an `Agent` used as a node cannot burn
+  more steps than the enclosing run has left.
 
 ### Fixed
 

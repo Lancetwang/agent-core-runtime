@@ -107,12 +107,14 @@ Agent(model=..., instructions=..., tools=[...])   # standard chat loop
 Agent(Flow(...), instructions=...)                # custom loop
 ```
 
-- `chat(text, *, content=None, context=None, max_steps=100, trace=None,
+- `chat(text, *, content=None, context=None, max_steps=None, trace=None,
   stream=None, on_delta=None, payload=None) -> str` — one user turn; reuse
   `context` to hold a conversation. Pass OpenAI-style multimodal `content`
   while keeping `text` as the flow's business input.
-- `run(payload, *, max_steps, trace, context) -> FlowRunResult` — run the
-  inner flow on a payload.
+- `run(payload, *, max_steps=None, trace, context) -> FlowRunResult` — run the
+  inner flow on a payload. `max_steps` defaults to the constructor budget.
+  Nested flows share one step budget: an `Agent` running inside an outer
+  flow may not burn more steps than the outer run has left.
 - `new_context() -> RunContext` — fresh context carrying this agent's
   message scope and instructions.
 - As a node, an agent exposes its inner flow's final action; pass

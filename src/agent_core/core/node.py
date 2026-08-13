@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 import time
@@ -220,8 +221,17 @@ class Flow:
             run_context.on_event = on_event
         context_token = set_current_context(run_context)
 
+        # Nested flows share one step budget: an inner flow (for example an
+        # Agent used as a node) may not burn more steps than the outer run
+        # has left. The remaining budget travels in a ContextVar so nesting
+        # composes without threading parameters through Node.exec.
+        outer_budget = _STEP_BUDGET.get()
+        budget = max_steps if outer_budget is None else min(max_steps, outer_budget)
+        budget_token = _STEP_BUDGET.set(budget)
+
         try:
-            for step in range(1, max_steps + 1):
+            for step in range(1, budget + 1):
+                _STEP_BUDGET.set(budget - step)
                 node_name = current.__class__.__name__
                 path.append(node_name)
                 run_context.set_execution_context(step=step, node=node_name)
@@ -259,8 +269,13 @@ class Flow:
                     )
                 current = next_node
 
+            nested_note = (
+                " The remaining budget was reduced by an enclosing flow run."
+                if outer_budget is not None
+                else ""
+            )
             error = FlowError(
-                f"Flow exceeded max_steps={max_steps}. "
+                f"Flow exceeded max_steps={budget}.{nested_note} "
                 "Raise max_steps for long runs, or check the graph for an action cycle that never ends."
             )
             run_context.emit(
@@ -270,6 +285,13 @@ class Flow:
             )
             raise error
         finally:
+            _STEP_BUDGET.reset(budget_token)
             if trace_options.enabled:
                 run_context.on_event = previous_on_event
             reset_current_context(context_token)
+
+
+_STEP_BUDGET: ContextVar[int | None] = ContextVar(
+    "agent_core_step_budget",
+    default=None,
+)
