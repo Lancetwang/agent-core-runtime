@@ -1,9 +1,11 @@
+import threading
 import unittest
 
 from agent_core.core import (
     CallableNode,
     ExecResult,
     Flow,
+    FlowCancelled,
     FlowError,
     Node,
     RunContext,
@@ -192,6 +194,45 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual([event.type for event in events], ["tool.progress"])
         self.assertEqual(context.events, [])
         self.assertEqual(observations, [])
+
+    def test_cancel_before_run_raises_flow_cancelled(self) -> None:
+        cancel = threading.Event()
+        cancel.set()
+        context = RunContext()
+
+        with self.assertRaisesRegex(FlowCancelled, "cancelled"):
+            Flow(CallableNode(lambda payload: payload)).run({}, context=context, cancel=cancel)
+
+        self.assertEqual(context.events[-1].type, "flow.cancel")
+
+    def test_cancel_between_steps_stops_the_flow(self) -> None:
+        cancel = threading.Event()
+
+        def trigger(payload: dict) -> dict:
+            cancel.set()
+            return payload
+
+        first = CallableNode(trigger)
+        second = CallableNode(lambda payload: {**payload, "reached": True})
+        first >> second
+
+        with self.assertRaises(FlowCancelled):
+            Flow(first).run({}, cancel=cancel, max_steps=5)
+
+    def test_nested_flow_inherits_the_cancel_event(self) -> None:
+        cancel = threading.Event()
+
+        def inner_trigger(payload: dict) -> dict:
+            cancel.set()
+            return payload
+
+        inner_start = CallableNode(inner_trigger)
+        inner_start >> inner_start
+        inner_agent_flow = Flow(inner_start)
+        outer_node = CallableNode(lambda payload: inner_agent_flow.run(payload, max_steps=5))
+
+        with self.assertRaises(FlowCancelled):
+            Flow(outer_node).run({}, cancel=cancel, max_steps=5)
 
 
 if __name__ == "__main__":

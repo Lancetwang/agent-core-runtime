@@ -6,6 +6,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Cooperative cancellation: `Flow.run`, `Agent.run`, `Agent.chat`, and
+  `ToolExecutor.execute_all` accept a `threading.Event` checked between
+  steps and tool calls. A cancelled run emits `flow.cancel` and raises the
+  new `FlowCancelled` (a `FlowError` subclass, never retried by `Node`).
+  Nested runs inherit the enclosing run's cancel event.
+
 ### Changed
 
 - `CallableNode` no longer guesses routing from tuple shape: a function must

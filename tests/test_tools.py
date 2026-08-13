@@ -5,7 +5,7 @@ import unittest
 from typing import Annotated, Any, Literal, TypedDict
 
 from agent_core.core import Flow
-from agent_core import RunContext
+from agent_core import FlowCancelled, RunContext
 from agent_core.tools import Tool, ToolCall, ToolCallNode, ToolDefinitionError, ToolExecutor, get_current_tool_call, tool
 
 
@@ -296,6 +296,36 @@ class ToolTests(unittest.TestCase):
             items["properties"]["score"],
             {"type": "integer", "description": "Entry score."},
         )
+
+    def test_executor_cancel_between_serial_calls(self) -> None:
+        cancel = threading.Event()
+
+        def setter(value: str) -> str:
+            cancel.set()
+            return value
+
+        setter_tool = Tool(
+            name="setter",
+            description="Sets the cancel event.",
+            parameters={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+            },
+            fn=setter,
+        )
+        executor = ToolExecutor([setter_tool, sleeper_tool("slow_write", parallel=False)])
+        calls = executor.parse_tool_calls(
+            {
+                "tool_calls": [
+                    _openai_call("call_1", "setter", "x"),
+                    _openai_call("call_2", "slow_write", "y"),
+                ]
+            }
+        )
+
+        with self.assertRaisesRegex(FlowCancelled, "cancelled"):
+            executor.execute_all(calls, cancel=cancel)
 
     def test_tool_decorator_requires_annotations(self) -> None:
         with self.assertRaises(ToolDefinitionError):

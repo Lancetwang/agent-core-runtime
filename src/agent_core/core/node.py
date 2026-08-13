@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
+import threading
 import time
 
 from agent_core.core.context import (
@@ -47,6 +48,10 @@ class FlowError(RuntimeError):
     """Raised when a flow cannot run or exceeds its step budget."""
 
 
+class FlowCancelled(FlowError):
+    """Raised when a run is cancelled through the cooperative cancel event."""
+
+
 class Node:
     """One unit of work in a flow.
 
@@ -77,6 +82,8 @@ class Node:
         for attempt in range(self.max_retries):
             try:
                 return self.exec(payload)
+            except FlowCancelled:
+                raise
             except Exception:
                 if attempt == self.max_retries - 1:
                     raise
@@ -201,6 +208,7 @@ class Flow:
         max_steps: int = 100,
         trace: TraceOptions | bool | None = None,
         context: RunContext | None = None,
+        cancel: threading.Event | None = None,
     ) -> FlowRunResult:
         if self.start is None:
             raise FlowError("Flow has no start node. Construct it as Flow(start_node).")
@@ -233,8 +241,21 @@ class Flow:
         budget = max_steps if outer_budget is None else min(max_steps, outer_budget)
         budget_token = _STEP_BUDGET.set(budget)
 
+        # Cooperative cancellation: an explicit event wins; otherwise nested
+        # runs inherit the enclosing run's event through the ContextVar.
+        cancel_event = cancel if cancel is not None else _FLOW_CANCEL.get()
+        cancel_token = _FLOW_CANCEL.set(cancel_event)
+
         try:
             for step in range(1, budget + 1):
+                if cancel_event is not None and cancel_event.is_set():
+                    run_context.emit(
+                        "flow.cancel",
+                        category="flow",
+                        step=step,
+                        data={"step": step},
+                    )
+                    raise FlowCancelled(f"Flow cancelled at step {step}.")
                 _STEP_BUDGET.set(budget - step)
                 node_name = current.__class__.__name__
                 path.append(node_name)
@@ -288,6 +309,7 @@ class Flow:
             )
             raise error
         finally:
+            _FLOW_CANCEL.reset(cancel_token)
             _STEP_BUDGET.reset(budget_token)
             if trace_options.enabled:
                 run_context.on_event = previous_on_event
@@ -296,5 +318,10 @@ class Flow:
 
 _STEP_BUDGET: ContextVar[int | None] = ContextVar(
     "agent_core_step_budget",
+    default=None,
+)
+
+_FLOW_CANCEL: ContextVar[threading.Event | None] = ContextVar(
+    "agent_core_flow_cancel",
     default=None,
 )

@@ -6,8 +6,10 @@ import time
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+import threading
 from typing import Any
 
+from agent_core.core.node import FlowCancelled, _FLOW_CANCEL
 from agent_core.tools.base import Tool
 
 
@@ -136,20 +138,36 @@ class ToolExecutor:
         finally:
             _CURRENT_TOOL_CALL.reset(token)
 
-    def execute_all(self, tool_calls: Sequence[ToolCall]) -> list[ToolResult]:
+    def execute_all(
+        self,
+        tool_calls: Sequence[ToolCall],
+        *,
+        cancel: threading.Event | None = None,
+    ) -> list[ToolResult]:
         """Run every tool call and collect the results in the original order.
 
         Consecutive calls to tools marked ``parallel`` run concurrently on a
         bounded thread pool. A serial call is an exclusive barrier between
         parallel batches. Results preserve ``tool_calls`` order either way.
+
+        ``cancel`` is checked cooperatively between calls (and before each
+        parallel batch); when set, a :class:`FlowCancelled` is raised. Inside
+        a flow run the enclosing run's cancel event applies automatically.
         """
         if not tool_calls:
             return []
+        cancel_event = cancel if cancel is not None else _FLOW_CANCEL.get()
+
+        def check_cancelled() -> None:
+            if cancel_event is not None and cancel_event.is_set():
+                raise FlowCancelled("Tool execution cancelled.")
+
         results: list[ToolResult | None] = [None] * len(tool_calls)
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
             batch: list[tuple[int, ToolCall]] = []
 
             def flush_parallel_batch() -> None:
+                check_cancelled()
                 futures: dict[int, Future[ToolResult]] = {
                     index: pool.submit(
                         contextvars.copy_context().run,
@@ -168,6 +186,7 @@ class ToolExecutor:
                     batch.append((index, call))
                 else:
                     flush_parallel_batch()
+                    check_cancelled()
                     results[index] = self.execute(call)
             flush_parallel_batch()
 

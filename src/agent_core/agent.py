@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+import threading
 import uuid
 
 from agent_core.core import (
@@ -94,6 +95,7 @@ class Agent(Node):
         stream: bool | None = None,
         on_delta: Any = None,
         payload: Mapping[str, Any] | None = None,
+        cancel: threading.Event | None = None,
     ) -> str:
         """Send one user message through the flow and return the final answer text.
 
@@ -119,6 +121,7 @@ class Agent(Node):
             max_steps=max_steps,
             trace=trace,
             context=run_context,
+            cancel=cancel,
         )
         return str(result.payload.get(PayloadKeys.ANSWER, ""))
 
@@ -129,11 +132,13 @@ class Agent(Node):
         max_steps: int | None = None,
         trace: TraceOptions | bool | None = None,
         context: RunContext | None = None,
+        cancel: threading.Event | None = None,
     ) -> FlowRunResult:
         """Run the inner flow on a payload and return the full :class:`FlowRunResult`.
 
         ``max_steps`` defaults to the agent's constructor budget; inside an
-        outer flow the remaining outer budget also applies.
+        outer flow the remaining outer budget also applies. ``cancel`` accepts
+        a ``threading.Event`` checked cooperatively between steps.
         """
         if max_steps is None:
             max_steps = self.max_steps
@@ -147,6 +152,7 @@ class Agent(Node):
                 max_steps=max_steps,
                 trace=trace,
                 context=context,
+                cancel=cancel,
             )
 
     def exec(self, payload: Any) -> ExecResult:

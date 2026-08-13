@@ -48,12 +48,19 @@ tuples stay business payload.
 Routes payloads between nodes by action name.
 
 ```python
-result = Flow(start_node).run(payload, max_steps=100, trace=None, context=None)
+result = Flow(start_node).run(payload, max_steps=100, trace=None, context=None, cancel=None)
 ```
 
 Raises `FlowError` when the flow has no start node or exceeds `max_steps`.
 Nested flows share one step budget: an inner flow may not burn more steps
 than the enclosing run has left.
+
+`cancel` accepts a `threading.Event` checked cooperatively between steps
+(and between tool calls in `ToolExecutor.execute_all`); when set, the run
+emits `flow.cancel` and raises `FlowCancelled`. Nested runs inherit the
+enclosing run's cancel event, and `Agent.run` / `Agent.chat` accept it too.
+Cancellation is cooperative: an in-flight model request or tool body is not
+interrupted.
 
 ### `PayloadKeys`
 
@@ -238,7 +245,7 @@ Pass `trace=True` for defaults, or build options with categories from
 | Event | Category | Emitted by |
 | --- | --- | --- |
 | `node.start` / `node.end` / `node.error` | `node` | `Flow` |
-| `flow.end` / `flow.error` | `flow` | `Flow` |
+| `flow.end` / `flow.error` / `flow.cancel` | `flow` | `Flow` |
 | `model.request` / `model.response` | `model` | `ModelNode` |
 | `model.delta` / `model.reasoning.delta` | `model` | streaming callback (live only, not retained) |
 | `model.request.payload` / `model.response.payload` | `model` | `ModelNode` (observe-only) |
