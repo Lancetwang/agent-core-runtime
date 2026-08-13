@@ -51,6 +51,25 @@ class PackageSurfaceTests(unittest.TestCase):
         self.assertIn(agent_core.__version__, version.stdout)
         self.assertIn("OK (import, node, flow, context)", check.stdout)
 
+    def test_module_exposes_the_chat_subcommand(self) -> None:
+        help_run = subprocess.run(
+            [sys.executable, "-m", "agent_core", "chat", "--help"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn("interactive chat REPL", help_run.stdout)
+
+    def test_module_without_a_command_prints_help(self) -> None:
+        run = subprocess.run(
+            [sys.executable, "-m", "agent_core"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn("check", run.stdout)
+        self.assertIn("chat", run.stdout)
+
 
 class WiringValidationTests(unittest.TestCase):
     def test_flow_without_start_node_raises(self) -> None:

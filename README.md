@@ -105,6 +105,10 @@ python -m agent_core check
 that the installed runtime can execute; provider credentials and model
 connectivity belong to the consuming harness and are intentionally not tested.
 
+With `LLM_API_KEY` / `LLM_MODEL` set, `python -m agent_core chat` starts a
+minimal interactive chat built from `Agent` + `LLM` (`--instructions`,
+`--max-steps`, `--no-stream` to configure it).
+
 Set model credentials in the process environment or pass them to `LLM(...)`:
 
 ```powershell

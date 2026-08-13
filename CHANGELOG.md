@@ -13,6 +13,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   steps and tool calls. A cancelled run emits `flow.cancel` and raises the
   new `FlowCancelled` (a `FlowError` subclass, never retried by `Node`).
   Nested runs inherit the enclosing run's cancel event.
+- `python -m agent_core chat` starts an interactive chat REPL built from
+  `Agent` + `LLM` (`--instructions`, `--max-steps`, `--no-stream`).
 
 ### Changed
 

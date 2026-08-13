@@ -10,10 +10,13 @@ Package diagnostics:
 ```powershell
 python -m agent_core --version
 python -m agent_core check
+python -m agent_core chat [--instructions TEXT] [--max-steps N] [--no-stream]
 ```
 
 The local check exercises `CallableNode`, `Flow`, and `RunContext` without
-credentials or a model request.
+credentials or a model request. `chat` starts an interactive REPL built from
+`Agent` + `LLM`; model configuration comes from the `LLM_*` environment
+variables, exactly as with the library API.
 
 ## Core
 
