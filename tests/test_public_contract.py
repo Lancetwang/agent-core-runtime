@@ -84,6 +84,31 @@ class WiringValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "Incomplete"):
             Incomplete().exec({})
 
+    def test_add_edge_wires_programmatically(self) -> None:
+        router = CallableNode(lambda payload: ExecResult("go", payload))
+        target = CallableNode(lambda payload: {**payload, "hit": True})
+
+        returned = router.add_edge("go", target)
+        result = Flow(router).run({})
+
+        self.assertIs(returned, target)
+        self.assertEqual(result.path, ["CallableNode", "CallableNode"])
+        self.assertTrue(result.payload["hit"])
+
+    def test_add_edge_rejects_non_nodes(self) -> None:
+        router = CallableNode(lambda payload: payload)
+
+        with self.assertRaisesRegex(TypeError, "must be a Node"):
+            router.add_edge("go", "not a node")  # type: ignore[arg-type]
+
+    def test_action_selection_does_not_mutate_the_node(self) -> None:
+        node = CallableNode(lambda payload: payload)
+
+        node - "go"
+
+        self.assertEqual(node.successors, {})
+        self.assertFalse(hasattr(node, "_action"))
+
 
 class ToolErrorMessageTests(unittest.TestCase):
     def test_unknown_tool_error_lists_available_tools(self) -> None:

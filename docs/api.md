@@ -20,10 +20,13 @@ credentials or a model request.
 ### `Node`
 
 One unit of work. Subclass and implement `exec(payload) -> (action, payload)`.
-Wire edges with the DSL: `node - "action" >> next_node`. An action with no
-successor ends the flow. Constructor options: `max_retries`, `wait` (retry
-`exec` on exception).
+Wire edges with the DSL: `node - "action" >> next_node`, or programmatically
+with `node.add_edge("action", next_node)` / `node >> next_node` for the
+`"default"` action. An action with no successor ends the flow. Constructor
+options: `max_retries`, `wait` (retry `exec` on exception).
 
+- Action selection (`node - "action"`) is stateless: it produces a binding
+  used by the next `>>` and never mutates the node.
 - Wiring the same action twice raises `ValueError`.
 - The right side of `>>` must be a `Node`, otherwise `TypeError`.
 

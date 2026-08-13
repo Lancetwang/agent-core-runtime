@@ -63,7 +63,6 @@ class Node:
         if max_retries < 1:
             raise ValueError(f"max_retries must be at least 1, got {max_retries}.")
         self.successors: dict[Action, Node] = {}
-        self._action: Action = "default"
         self.max_retries = max_retries
         self.wait = wait
 
@@ -84,30 +83,56 @@ class Node:
                     time.sleep(self.wait)
         raise RuntimeError("Unexpected error in Node._exec")
 
-    def __rshift__(self, other: Node) -> Node:
-        """Wire ``self - "action" >> other`` and return ``other`` for chaining."""
-        if not isinstance(other, Node):
+    def add_edge(self, action: Action, successor: Node) -> Node:
+        """Wire ``action`` to ``successor`` programmatically and return it.
+
+        This is the explicit, stateless form of the ``node - "action" >>
+        next`` DSL, useful when flows are built from data instead of literal
+        wiring. Each action selects exactly one successor; wiring the same
+        action to a different node raises ``ValueError``.
+        """
+        if not isinstance(successor, Node):
             raise TypeError(
-                f"The right side of >> must be a Node, got {type(other).__name__}. "
+                f"The right side of >> must be a Node, got {type(successor).__name__}. "
                 'Write edges as: node - "action" >> next_node.'
             )
-        existing = self.successors.get(self._action)
-        if existing is not None and existing is not other:
+        existing = self.successors.get(action)
+        if existing is not None and existing is not successor:
             raise ValueError(
-                f"{type(self).__name__} already routes action '{self._action}' to "
+                f"{type(self).__name__} already routes action '{action}' to "
                 f"{type(existing).__name__}. Each action selects exactly one successor; "
                 "use a distinct action name for the new edge."
             )
-        self.successors[self._action] = other
-        self._action = "default"
-        return other
+        self.successors[action] = successor
+        return successor
 
-    def __sub__(self, action: Action) -> Node:
-        """Select the action name for the next ``>>`` edge."""
+    def __rshift__(self, other: Node) -> Node:
+        """Shorthand for ``self - "default" >> other``; returns ``other`` for chaining."""
+        return self.add_edge("default", other)
+
+    def __sub__(self, action: Action) -> _ActionBinding:
+        """Select the action name for the next ``>>`` edge without mutating the node."""
         if not isinstance(action, str):
             raise TypeError(f"action must be a string, got {type(action).__name__}.")
-        self._action = action or "default"
-        return self
+        return _ActionBinding(self, action or "default")
+
+
+class _ActionBinding:
+    """Pending ``node - "action"`` selection for the next ``>>`` edge.
+
+    Carries the pending action instead of mutating the source node, so wiring
+    is stateless: graph construction no longer depends on hidden node state
+    and concurrent wiring of distinct nodes stays safe.
+    """
+
+    __slots__ = ("source", "action")
+
+    def __init__(self, source: Node, action: Action) -> None:
+        self.source = source
+        self.action = action
+
+    def __rshift__(self, other: Node) -> Node:
+        return self.source.add_edge(self.action, other)
 
 
 class CallableNode(Node):
