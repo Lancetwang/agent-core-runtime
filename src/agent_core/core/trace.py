@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from agent_core.core.context import AgentEvent
 
-DEFAULT_TRACE_CATEGORIES = frozenset({"flow", "node", "tool", "model", "llm", "plan"})
+DEFAULT_TRACE_CATEGORIES = frozenset({"flow", "node", "tool", "model"})
 TraceEvent = AgentEvent
 
 

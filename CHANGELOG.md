@@ -30,6 +30,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   arguments/results travel through observe-only `tool.call.payload` /
   `tool.result.payload` events. Trace collection captures live events of a
   run regardless of retention.
+- Default trace categories dropped the never-emitted `llm` and `plan`
+  entries and are now `{"flow", "node", "tool", "model"}`.
 
 ### Fixed
 

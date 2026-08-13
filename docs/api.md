@@ -230,7 +230,7 @@ model. `ToolResult.to_message()` yields the OpenAI-style tool message.
 
 Select which run events are collected, forwarded to `on_event`, or printed.
 Pass `trace=True` for defaults, or build options with categories from
-`{"flow", "node", "tool", "model", "llm", "plan"}`.
+`{"flow", "node", "tool", "model"}`.
 `format_trace_event(event)` renders one event as a log line.
 
 ## Events emitted by the runtime
