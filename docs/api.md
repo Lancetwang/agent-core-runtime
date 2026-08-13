@@ -159,9 +159,16 @@ configuration comes from `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (or the
 
 Calls the model once and stores the assistant message in
 `state[assistant_key]`. Messages come from an explicit builder, the active
-context's scope, or `state[messages_key]` — in that order. Per-call overrides
-travel in `state[chat_kwargs_key]`. Emits `model.request` / `model.response`
-and records usage.
+context's scope, or `state[messages_key]` — in that order. The context scope
+is the single canonical history during a flow run; `state[messages_key]` is
+only an import seed for custom flows and no longer mirrors new messages.
+Per-call overrides travel in `state[chat_kwargs_key]`. Emits
+`model.request` / `model.response` and records usage.
+
+An `Agent` adopts unscoped ambient messages (added to the context outside
+any scope) into its own scope at run start, so a conversation seeded through
+`context.add_message` without a scope is visible to the model while other
+agents' scoped messages stay isolated.
 
 ### `ToolRouterNode`
 
@@ -200,8 +207,9 @@ to tools that need to correlate transient progress with a UI entry.
 ### `ToolCallNode`
 
 Runs pending tool calls inside a flow: executes them, stores results under
-`state[results_key]`, appends `role: tool` messages to the history and the
-active context, and emits `tool.call` / `tool.result` events.
+`state[results_key]`, appends `role: tool` messages to the active context
+scope (or to `state[messages_key]` when no context is active), and emits
+`tool.call` / `tool.result` events.
 
 ### `ToolCall` / `ToolResult`
 

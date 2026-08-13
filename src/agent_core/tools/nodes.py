@@ -10,8 +10,9 @@ class ToolCallNode(Node):
 
     Reads the assistant message from ``state[assistant_key]``, runs every tool
     call through the executor, stores results under ``state[results_key]``,
-    appends ``role: tool`` messages to both ``state[messages_key]`` and the
-    active context, and emits ``tool.call`` / ``tool.result`` events.
+    appends ``role: tool`` messages to the active context scope (the
+    canonical history; or to ``state[messages_key]`` when no context is
+    active), and emits ``tool.call`` / ``tool.result`` events.
     """
 
     def __init__(
@@ -64,16 +65,17 @@ class ToolCallNode(Node):
                 )
 
         state[self.results_key] = results
-        messages = list(state.get(self.messages_key, []))
-        for result in results:
-            message = result.to_message()
-            messages.append(message)
-            if context is not None:
+        if context is not None:
+            for result in results:
                 context.add_message(
                     "tool",
                     result.content,
                     tool_call_id=result.tool_call_id,
                 )
-        state[self.messages_key] = messages
+        else:
+            messages = list(state.get(self.messages_key, []))
+            for result in results:
+                messages.append(result.to_message())
+            state[self.messages_key] = messages
 
         return self.next_action, state

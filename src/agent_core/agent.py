@@ -141,6 +141,7 @@ class Agent(Node):
         if context is None:
             context = RunContext()
         with context.use_message_scope(self._message_scope):
+            self._adopt_global_messages(context)
             return self.flow.run(
                 payload,
                 max_steps=max_steps,
@@ -154,6 +155,7 @@ class Agent(Node):
         if context is None:
             context = RunContext()
         with context.use_message_scope(self._message_scope):
+            self._adopt_global_messages(context)
             result = self.flow.run(
                 payload,
                 max_steps=self.max_steps,
@@ -162,6 +164,29 @@ class Agent(Node):
             )
         action = (result.action or "default") if self.action is _INHERIT_ACTION else self.action
         return action, result.payload
+
+    def _adopt_global_messages(self, context: RunContext) -> None:
+        """Merge unscoped ambient messages into this agent's scope once each.
+
+        Harnesses may seed or continue a conversation through unscoped
+        ``context.add_message`` calls (see examples/04). Entering the agent
+        scope adopts that ambient history so the model sees the full
+        conversation, while messages other agents wrote to their own scopes
+        stay invisible.
+        """
+        scoped = context.message_scopes.setdefault(self._message_scope, [])
+        known = {id(message) for message in scoped}
+        foreign = {
+            id(message)
+            for name, messages in context.message_scopes.items()
+            if name != self._message_scope
+            for message in messages
+        }
+        for message in context.messages:
+            if id(message) in known or id(message) in foreign:
+                continue
+            scoped.append(message)
+            known.add(id(message))
 
     def _prepare_context(self, context: RunContext | None) -> RunContext | None:
         if self.instructions is None:

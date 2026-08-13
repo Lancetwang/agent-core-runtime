@@ -17,11 +17,13 @@ class ModelNode(Node):
     """Call the chat model once and store the assistant message.
 
     Messages come from an explicit ``messages`` builder when provided.
-    Otherwise the active context scope is canonical; an initial
-    ``state[messages_key]`` history is imported into an empty scope once.
-    The response lands in ``state[assistant_key]``; per-call overrides can be
-    passed through ``state[chat_kwargs_key]``. Emits ``model.request`` /
-    ``model.response`` events and records usage on the active context.
+    Otherwise the active context scope is the single canonical history: an
+    unscoped ambient conversation is adopted into the agent scope at run
+    start, and an initial ``state[messages_key]`` history is imported into an
+    empty scope once. The response lands in ``state[assistant_key]``;
+    per-call overrides can be passed through ``state[chat_kwargs_key]``.
+    Emits ``model.request`` / ``model.response`` events and records usage on
+    the active context.
     """
 
     def __init__(
@@ -79,15 +81,19 @@ class ModelNode(Node):
         message = model.chat_message(messages, tools=tools or None, **chat_kwargs)
         state[self.assistant_key] = message
         if self.append_message:
-            history = list(state.get(self.messages_key, []))
-            history.append(message)
-            state[self.messages_key] = history
-            if context:
+            if context is not None:
+                # The active scope is the canonical history; do not mirror
+                # into state[messages_key], which is only an import seed for
+                # custom flows without a context.
                 tool_calls = message.get("tool_calls")
                 extra = {"tool_calls": tool_calls} if tool_calls else {}
                 if tool_calls and message.get("reasoning_content"):
                     extra["reasoning_content"] = message["reasoning_content"]
                 context.add_message("assistant", str(message.get("content", "")), **extra)
+            else:
+                history = list(state.get(self.messages_key, []))
+                history.append(_history_copy(message))
+                state[self.messages_key] = history
 
         if context:
             context.record_model_usage(message.get("usage"))
@@ -253,6 +259,18 @@ def _reasoning_delta_callback(context: Any, callback: Callable[[str], None] | No
                 callback(text)
 
     return on_delta
+
+
+def _history_copy(message: Mapping[str, Any]) -> dict[str, Any]:
+    """History copy with provider reasoning retained only for tool-call turns.
+
+    Matches the retention rule used by the context store, so the two stores
+    never diverge: reasoning is needed to continue tool-call conversations
+    but is dead weight (and context cost) on final answers.
+    """
+    if message.get("tool_calls") or "reasoning_content" not in message:
+        return dict(message)
+    return {key: value for key, value in message.items() if key != "reasoning_content"}
 
 
 def _tool_names(tools: Sequence[Mapping[str, Any]]) -> list[str]:

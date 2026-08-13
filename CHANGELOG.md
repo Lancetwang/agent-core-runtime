@@ -16,12 +16,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   constructor budget instead of an independent hard-coded 100.
 - Nested flows share one step budget: an `Agent` used as a node cannot burn
   more steps than the enclosing run has left.
+- The conversation history now has one canonical store: during a flow run,
+  assistant and tool messages are written to the active context scope only.
+  `state["history"]` no longer accumulates during runs; it remains an import
+  seed for custom flows. Reasoning content follows the same retention rule
+  in both stores (kept only for tool-call turns).
+- An `Agent` adopts unscoped ambient messages into its scope at run start,
+  so a conversation seeded through unscoped `context.add_message` calls is
+  visible to the model while other agents' scoped messages stay isolated.
 
 ### Fixed
 
 - Tool schema generation now unwraps `Annotated` inside containers
   (`list[Annotated[T, "desc"]]`, tuple items, TypedDict fields), so nested
   item descriptions no longer raise `ToolDefinitionError`.
+- Flows wired in the examples/04 style (system and user messages added to a
+  plain `RunContext` without a scope) no longer send an empty message list to
+  the model on the first request.
 
 ## [0.1.10] - 2026-08-08
 

@@ -63,7 +63,11 @@ class LlmNodeTests(unittest.TestCase):
         result = Flow(node).run({"history": [{"role": "user", "content": "hi"}]})
 
         self.assertEqual(result.payload["assistant_message"]["content"], "hello")
-        self.assertEqual(result.payload["history"][-1]["content"], "hello")
+        # The context scope is the canonical store; state history no longer
+        # mirrors assistant messages during a flow run.
+        self.assertEqual(result.payload["history"], [{"role": "user", "content": "hi"}])
+        self.assertEqual(result.context.messages[-1]["role"], "assistant")
+        self.assertEqual(result.context.messages[-1]["content"], "hello")
         self.assertEqual(model.requests[0]["tools"][0]["function"]["name"], "get_weather")
         self.assertEqual(model.requests[0]["kwargs"]["temperature"], 0)
         self.assertIn(
@@ -82,7 +86,8 @@ class LlmNodeTests(unittest.TestCase):
         result = Flow(ModelNode(model=model)).run(payload)
 
         self.assertEqual(payload["history"], [{"role": "user", "content": "hi"}])
-        self.assertEqual(len(result.payload["history"]), 2)
+        self.assertEqual(result.payload["history"], [{"role": "user", "content": "hi"}])
+        self.assertEqual(result.context.messages[-1]["content"], "hello")
 
     def test_context_imports_payload_history_before_tool_loop(self) -> None:
         model = FakeChatModel(
@@ -181,6 +186,83 @@ class LlmNodeTests(unittest.TestCase):
 
         events = [event for event in result.context.events if event.type == "model.reasoning.delta"]
         self.assertEqual([event.data["content"] for event in events], ["think"])
+
+    def test_unscoped_ambient_messages_are_adopted_into_agent_scope(self) -> None:
+        model = FakeChatModel(
+            [
+                {"role": "assistant", "content": "answer one"},
+                {"role": "assistant", "content": "answer two"},
+            ]
+        )
+        tools = [get_weather]
+        model_node = ModelNode(model=model, tools=tools, action="observe")
+        router_node = ToolRouterNode(tool_action="tool_call", done_action="final")
+        tool_node = ToolCallNode(executor=ToolExecutor(tools), next_action="chat")
+        model_node - "observe" >> router_node
+        router_node - "tool_call" >> tool_node
+        tool_node - "chat" >> model_node
+        agent = Agent(Flow(model_node))
+
+        context = RunContext()
+        context.add_message("system", "SYSTEM")
+        context.add_message("user", "first?")
+
+        agent.run({"turn": 1}, context=context, trace=False)
+        context.add_message("user", "second?")
+
+        agent.run({"turn": 2}, context=context, trace=False)
+
+        self.assertEqual(
+            [message["content"] for message in model.requests[0]["messages"]],
+            ["SYSTEM", "first?"],
+        )
+        self.assertEqual(
+            [message["content"] for message in model.requests[1]["messages"]],
+            ["SYSTEM", "first?", "answer one", "second?"],
+        )
+
+    def test_state_history_retains_reasoning_only_for_tool_calls(self) -> None:
+        model = FakeChatModel(
+            [
+                {
+                    "role": "assistant",
+                    "content": "final",
+                    "reasoning_content": "private thinking",
+                }
+            ]
+        )
+        action, state = ModelNode(model=model, messages=build_messages).exec(
+            {"history": [{"role": "user", "content": "hi"}]}
+        )
+
+        self.assertEqual(action, "default")
+        self.assertEqual(state["assistant_message"]["reasoning_content"], "private thinking")
+        self.assertNotIn("reasoning_content", state["history"][-1])
+
+        tool_call_model = FakeChatModel(
+            [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "think",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city": "Shanghai"}',
+                            },
+                        }
+                    ],
+                }
+            ]
+        )
+        action, state = ModelNode(model=tool_call_model, messages=build_messages).exec(
+            {"history": [{"role": "user", "content": "weather?"}]}
+        )
+
+        self.assertEqual(state["history"][-1]["reasoning_content"], "think")
 
     def test_agent_runs_default_tool_loop(self) -> None:
         model = FakeChatModel(
