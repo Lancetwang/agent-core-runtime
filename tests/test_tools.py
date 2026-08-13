@@ -272,6 +272,30 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(items["properties"]["old_text"]["description"], "Exact text to replace.")
         self.assertIn('\"call_id\": \"edit-1\"', result.content)
 
+    def test_nested_annotated_items_keep_their_descriptions(self) -> None:
+        @tool(description="Count items.")
+        def count(items: list[Annotated[int, "Item count."]]) -> str:
+            return str(len(items))
+
+        items = count.parameters["properties"]["items"]["items"]
+
+        self.assertEqual(items, {"type": "integer", "description": "Item count."})
+
+    def test_nested_annotated_inside_typed_dict_items(self) -> None:
+        class Entry(TypedDict):
+            score: Annotated[int, "Entry score."]
+
+        @tool(description="Rank entries.")
+        def rank(entries: list[Entry]) -> str:
+            return "ok"
+
+        items = rank.parameters["properties"]["entries"]["items"]
+
+        self.assertEqual(
+            items["properties"]["score"],
+            {"type": "integer", "description": "Entry score."},
+        )
+
     def test_tool_decorator_requires_annotations(self) -> None:
         with self.assertRaises(ToolDefinitionError):
 

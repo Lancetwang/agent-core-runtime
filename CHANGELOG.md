@@ -6,6 +6,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Tool schema generation now unwraps `Annotated` inside containers
+  (`list[Annotated[T, "desc"]]`, tuple items, TypedDict fields), so nested
+  item descriptions no longer raise `ToolDefinitionError`.
+
 ## [0.1.10] - 2026-08-08
 
 ### Fixed

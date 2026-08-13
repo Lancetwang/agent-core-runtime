@@ -157,7 +157,10 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
 
     if origin in {list, tuple}:
         item_type = args[0] if args else Any
-        return {"type": "array", "items": _type_to_schema(item_type)}
+        item_schema, item_description = _annotation_to_schema(item_type)
+        if item_description:
+            item_schema["description"] = item_description
+        return {"type": "array", "items": item_schema}
 
     if origin is dict:
         return {"type": "object"}
