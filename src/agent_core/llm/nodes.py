@@ -244,7 +244,10 @@ def _minimal_agent_loop(
 def _delta_callback(context: Any, callback: Callable[[str], None] | None) -> Callable[[str], None]:
     def on_delta(text: str) -> None:
         if text:
-            context.emit("model.delta", category="model", data={"content": text})
+            # Live-only: one event per streamed chunk is transient UI
+            # progress, not retained history. Tracing still captures it
+            # through the live subscriber.
+            context.notify("model.delta", category="model", data={"content": text})
             if callback:
                 callback(text)
 
@@ -254,7 +257,7 @@ def _delta_callback(context: Any, callback: Callable[[str], None] | None) -> Cal
 def _reasoning_delta_callback(context: Any, callback: Callable[[str], None] | None) -> Callable[[str], None]:
     def on_delta(text: str) -> None:
         if text:
-            context.emit("model.reasoning.delta", category="model", data={"content": text})
+            context.notify("model.reasoning.delta", category="model", data={"content": text})
             if callback:
                 callback(text)
 

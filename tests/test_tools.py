@@ -5,6 +5,7 @@ import unittest
 from typing import Annotated, Any, Literal, TypedDict
 
 from agent_core.core import Flow
+from agent_core import RunContext
 from agent_core.tools import Tool, ToolCall, ToolCallNode, ToolDefinitionError, ToolExecutor, get_current_tool_call, tool
 
 
@@ -419,8 +420,11 @@ class ToolTests(unittest.TestCase):
             },
             "history": [],
         }
+        observations = []
+        context = RunContext()
+        context.on_observation = observations.append
 
-        result = Flow(node).run(payload, trace=True)
+        result = Flow(node).run(payload, trace=True, context=context)
         tool_events = [event for event in result.trace if event.category == "tool"]
         runtime_tool_events = [
             event for event in result.context.events if event.category == "tool"
@@ -428,12 +432,21 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual([event.type for event in tool_events], ["tool.call", "tool.result"])
         self.assertEqual(tool_events[0].data["name"], "get_weather")
-        self.assertEqual(tool_events[0].data["arguments"], {"city": "Shanghai"})
+        self.assertNotIn("arguments", tool_events[0].data)
         self.assertFalse(tool_events[1].data["is_error"])
+        self.assertEqual(tool_events[1].data["content_length"], len(result.context.messages[-1]["content"]))
         self.assertEqual(
             [event.type for event in runtime_tool_events],
             ["tool.call", "tool.result"],
         )
+        call_payload = next(
+            event for event in observations if event.type == "tool.call.payload"
+        )
+        result_payload = next(
+            event for event in observations if event.type == "tool.result.payload"
+        )
+        self.assertEqual(call_payload.data["arguments"], {"city": "Shanghai"})
+        self.assertIn("sunny", result_payload.data["content"])
         self.assertEqual(result.context.messages[-1]["role"], "tool")
         self.assertEqual(result.context.messages[-1]["tool_call_id"], "call_1")
         self.assertNotIn("is_error", result.context.messages[-1])

@@ -24,6 +24,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - An `Agent` adopts unscoped ambient messages into its scope at run start,
   so a conversation seeded through unscoped `context.add_message` calls is
   visible to the model while other agents' scoped messages stay isolated.
+- The retained event stream now follows a retention policy: `model.delta` /
+  `model.reasoning.delta` are live-only (`notify`, no longer retained),
+  `tool.call` / `tool.result` retain small metadata only, and full tool
+  arguments/results travel through observe-only `tool.call.payload` /
+  `tool.result.payload` events. Trace collection captures live events of a
+  run regardless of retention.
 
 ### Fixed
 

@@ -38,7 +38,10 @@ class ToolCallNode(Node):
         context = get_current_context()
         # Announce every call first so hosts see the batch the model asked
         # for; results are then emitted in the same order, whether the calls
-        # ran concurrently or one after another.
+        # ran concurrently or one after another. Retained events carry small
+        # metadata only; arguments and results (which may contain secrets or
+        # large payloads) travel through the observe channel and are not
+        # retained in the event stream.
         for tool_call in tool_calls:
             if context is not None:
                 context.emit(
@@ -47,10 +50,19 @@ class ToolCallNode(Node):
                     data={
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
+                    },
+                )
+                context.observe(
+                    "tool.call.payload",
+                    category="tool",
+                    data={
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.name,
                         "arguments": tool_call.arguments,
                     },
                 )
         results = self.executor.execute_all(tool_calls)
+        names = {call.id: call.name for call in tool_calls}
         for result in results:
             if context is not None:
                 context.emit(
@@ -58,9 +70,18 @@ class ToolCallNode(Node):
                     category="tool",
                     data={
                         "tool_call_id": result.tool_call_id,
-                        "content": result.content,
+                        "name": names.get(result.tool_call_id),
                         "is_error": result.is_error,
                         "elapsed_ms": result.elapsed_ms,
+                        "content_length": len(result.content),
+                    },
+                )
+                context.observe(
+                    "tool.result.payload",
+                    category="tool",
+                    data={
+                        "tool_call_id": result.tool_call_id,
+                        "content": result.content,
                     },
                 )
 

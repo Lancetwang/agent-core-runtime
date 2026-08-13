@@ -90,10 +90,6 @@ def print_context(context: RunContext, view: str) -> None:
     print(json.dumps(snapshots[view], ensure_ascii=False, indent=2))
 
 
-def count_model_deltas(context: RunContext) -> int:
-    return sum(1 for event in context.events if event.type == "model.delta")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a manually wired model-tool-model loop.")
     parser.add_argument("--interactive", action="store_true", help="Start an interactive chat.")
@@ -117,6 +113,16 @@ def main() -> None:
     context = RunContext()
     context.metadata["example"] = "04_tool_agent"
     context.add_message("system", SYSTEM_PROMPT)
+
+    # Streamed deltas are live-only events, so count them through the live
+    # subscriber instead of the retained event list.
+    delta_counter = [0]
+
+    def on_runtime_event(event) -> None:
+        if event.type == "model.delta":
+            delta_counter[0] += 1
+
+    context.on_event = on_runtime_event
 
     model_node = ModelNode(
         tools=tools,
@@ -160,7 +166,7 @@ def main() -> None:
         turn_index = int(context.metadata.get("turn_count", 0)) + 1
         context.metadata["turn_count"] = turn_index
         context.add_message("user", user_input)
-        delta_count_before = count_model_deltas(context)
+        delta_count_before = delta_counter[0]
         result = agent.run(
             {"turn": turn_index, "stream": stream},
             context=context,
@@ -170,7 +176,7 @@ def main() -> None:
         answer = str(result.payload.get(PayloadKeys.ANSWER, ""))
         context.set_artifact("last_answer", answer)
 
-        if stream and count_model_deltas(context) > delta_count_before:
+        if stream and delta_counter[0] > delta_count_before:
             print()
         else:
             print(answer)

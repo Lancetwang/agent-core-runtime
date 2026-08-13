@@ -209,13 +209,17 @@ class Flow:
         path: list[str] = []
         run_context = context if context is not None else RunContext()
         trace_options = TraceOptions.from_value(trace)
-        event_start = len(run_context.events)
         usage_start = run_context.usage.snapshot()
         previous_on_event = run_context.on_event
+        # Trace collection is independent of retention: it captures every
+        # live event of this run, including non-retained notify events such
+        # as streamed model deltas.
+        trace_events: list[TraceEvent] = []
         if trace_options.enabled:
             def on_event(event: TraceEvent) -> None:
                 if previous_on_event is not None:
                     previous_on_event(event)
+                trace_events.append(event)
                 trace_options.dispatch(event)
 
             run_context.on_event = on_event
@@ -258,12 +262,11 @@ class Flow:
                 if next_node is None:
                     run_context.set_execution_context(step=step, node=None)
                     run_context.emit("flow.end", category="flow", step=step, node=None)
-                    events = run_context.events[event_start:]
                     return FlowRunResult(
                         action=last_action,
                         payload=payload,
                         path=path,
-                        trace=[event for event in events if trace_options.includes(event.category)],
+                        trace=[event for event in trace_events if trace_options.includes(event.category)],
                         context=run_context,
                         usage=run_context.usage.since(usage_start),
                     )

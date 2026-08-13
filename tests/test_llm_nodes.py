@@ -164,14 +164,19 @@ class LlmNodeTests(unittest.TestCase):
     def test_model_node_emits_delta_events(self) -> None:
         node = ModelNode(model=DeltaFakeChatModel(), messages=build_messages)
 
-        result = Flow(node).run({"history": [{"role": "user", "content": "hi"}]})
+        result = Flow(node).run({"history": [{"role": "user", "content": "hi"}]}, trace=True)
 
         delta_events = [
-            event for event in result.context.events if event.type == "model.delta"
+            event for event in result.trace if event.type == "model.delta"
         ]
         self.assertEqual(
             [event.data["content"] for event in delta_events],
             ["hel", "lo"],
+        )
+        # Streamed deltas are live-only and never retained in context events.
+        self.assertNotIn(
+            "model.delta",
+            [event.type for event in result.context.events],
         )
 
     def test_model_node_emits_reasoning_deltas(self) -> None:
@@ -182,10 +187,14 @@ class LlmNodeTests(unittest.TestCase):
 
         result = Flow(
             ModelNode(model=ReasoningModel(), chat_kwargs={"on_reasoning_delta": lambda _: None})
-        ).run({"history": [{"role": "user", "content": "hi"}]})
+        ).run({"history": [{"role": "user", "content": "hi"}]}, trace=True)
 
-        events = [event for event in result.context.events if event.type == "model.reasoning.delta"]
+        events = [event for event in result.trace if event.type == "model.reasoning.delta"]
         self.assertEqual([event.data["content"] for event in events], ["think"])
+        self.assertNotIn(
+            "model.reasoning.delta",
+            [event.type for event in result.context.events],
+        )
 
     def test_unscoped_ambient_messages_are_adopted_into_agent_scope(self) -> None:
         model = FakeChatModel(

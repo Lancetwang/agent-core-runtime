@@ -86,6 +86,12 @@ Key methods:
 - `emit(type, category=..., data=...)` — record an event and notify
   subscribers; `observe(...)` sends non-retained detail to `on_observation`,
   while `notify(...)` sends transient UI progress to `on_event` only.
+
+Retention policy: retained events (`emit`) carry small metadata, so the
+event stream stays bounded over long sessions. Large or sensitive payloads
+travel through `observe` (never retained), and transient per-chunk streams
+such as model deltas travel through `notify` (live only). Trace collection
+captures live events of the run regardless of retention.
 - `set_artifact(name, value)`, `record_model_usage(usage)`, `to_dict()`.
 
 Inside a node, `get_current_context()` returns the active run's context (or
@@ -234,9 +240,10 @@ Pass `trace=True` for defaults, or build options with categories from
 | `node.start` / `node.end` / `node.error` | `node` | `Flow` |
 | `flow.end` / `flow.error` | `flow` | `Flow` |
 | `model.request` / `model.response` | `model` | `ModelNode` |
-| `model.delta` | `model` | streaming callback |
+| `model.delta` / `model.reasoning.delta` | `model` | streaming callback (live only, not retained) |
 | `model.request.payload` / `model.response.payload` | `model` | `ModelNode` (observe-only) |
 | `tool.observe` | `tool` | `ToolRouterNode` |
-| `tool.call` / `tool.result` | `tool` | `ToolCallNode` |
+| `tool.call` / `tool.result` | `tool` | `ToolCallNode` (metadata only) |
+| `tool.call.payload` / `tool.result.payload` | `tool` | `ToolCallNode` (observe-only) |
 | `message.add` | `message` | `RunContext.add_message` |
 | `artifact.set` | `artifact` | `RunContext.set_artifact` |
