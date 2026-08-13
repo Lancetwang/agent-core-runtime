@@ -208,6 +208,10 @@ class Flow:
                     run_context.emit("node.error", category="node", data=error)
                     run_context.emit("flow.error", category="flow", data=error)
                     raise
+                # Align with the wiring DSL, which normalizes empty action
+                # names to "default": a node returning "" routes to the
+                # "default" successor instead of silently ending the flow.
+                last_action = last_action or "default"
                 next_node = current.successors.get(last_action)
                 run_context.set_execution_context(step=step, node=node_name)
                 run_context.emit(

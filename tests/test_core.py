@@ -48,6 +48,17 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual(result.payload, {})
         self.assertIsInstance(result.action, str)
 
+    def test_empty_action_routes_to_default_successor(self) -> None:
+        target = CallableNode(lambda payload: {**payload, "reached": True})
+        source = CallableNode(lambda payload: ExecResult("", payload))
+        source - "" >> target
+
+        result = Flow(source).run({})
+
+        self.assertEqual(result.action, "default")
+        self.assertEqual(result.payload["reached"], True)
+        self.assertEqual(result.path, ["CallableNode", "CallableNode"])
+
     def test_retry(self) -> None:
         calls = {"count": 0}
 
