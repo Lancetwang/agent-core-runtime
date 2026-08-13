@@ -107,6 +107,10 @@ python -m agent_core check
 runtime 包能够正常运行。Provider 凭据和模型连通性属于上层 harness 配置，
 不会混入通用 runtime 的安装自检。
 
+设置好 `LLM_API_KEY` / `LLM_MODEL` 后，`python -m agent_core chat` 会启动
+一个基于 `Agent` + `LLM` 的最小交互式聊天（可用 `--instructions`、
+`--max-steps`、`--no-stream` 配置）。
+
 Runtime 不会自动读取 `.env`。请由上层应用加载配置，或直接设置进程环境变量：
 
 ```powershell
@@ -158,10 +162,12 @@ print(answer)
 当你不想使用普通聊天循环时，可以直接连接节点：
 
 ```python
-from agent_core import Agent, CallableNode, Flow
+from agent_core import Agent, CallableNode, ExecResult, Flow
 
-def classify(payload: dict) -> tuple[str, dict]:
-    return "question" if payload["text"].endswith("?") else "statement", payload
+def classify(payload: dict) -> ExecResult:
+    return ExecResult(
+        "question" if payload["text"].endswith("?") else "statement", payload
+    )
 
 def answer(payload: dict) -> dict:
     payload["answer"] = "received"
@@ -244,6 +250,7 @@ if context:
 ## 验证
 
 ```powershell
+uv run ruff check src tests examples
 uv run python -m unittest discover -s tests
 uv run python -m compileall src tests examples
 ```
