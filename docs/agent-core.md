@@ -36,7 +36,9 @@ If an application needs a different loop, it can create a `Flow` directly and pa
 
 ## Model Boundary
 
-`ChatModel` is the runtime's normalized OpenAI-style protocol. A native provider adapter translates to this shape:
+`ChatModel` is a thin seam normalized to the OpenAI wire format — messages,
+tool schemas, `tool_choice`, and streaming options keep their OpenAI shapes,
+and the assistant message it returns is an OpenAI-style dict:
 
 ```python
 {
@@ -47,7 +49,10 @@ If an application needs a different loop, it can create a `Flow` directly and pa
 }
 ```
 
-Any model provider can be used through an adapter that implements this protocol.
+This is deliberately not a provider abstraction layer: "replaceable" means
+another OpenAI-compatible endpoint, or a one-method adapter that translates
+a native provider schema at this boundary. Provider-specific knobs travel
+as plain data through `extra_body` / `chat_kwargs`.
 
 The default OpenAI-compatible adapter requests usage in streaming mode and normalizes it into the assistant message. `ModelNode` records each response in `RunContext.usage`, while `FlowRunResult.usage` exposes the delta for that flow invocation. Applications do not need to rescan trace events to calculate turn totals.
 

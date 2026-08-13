@@ -11,11 +11,15 @@ Message = Mapping[str, Any]
 
 
 class ChatModel(Protocol):
-    """Runtime model protocol normalized to OpenAI-style messages.
+    """Runtime model protocol normalized to the OpenAI wire format.
 
-    Provider adapters implement this method and translate their native schema.
-    The runtime expects an OpenAI-style assistant message dict:
-    ``{"role": "assistant", "content": str, "tool_calls": [...]?, "usage": {...}?}``.
+    This is a thin seam, not a provider abstraction: messages, tool schemas,
+    ``tool_choice``, and streaming options keep their OpenAI shapes, and the
+    assistant message it returns is an OpenAI-style dict
+    (``{"role": "assistant", "content": str, "tool_calls": [...]?, "usage": {...}?}``).
+    Adapters for non-OpenAI providers translate their native schema at this
+    boundary; "replaceable" therefore means "another OpenAI-compatible
+    endpoint, or a one-method adapter", not pluggable native protocols.
     """
 
     def chat_message(
@@ -34,7 +38,10 @@ class LLM:
 
     If values are not passed explicitly, they are read from the process environment:
     `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, or the compatible
-    `OPENAI_*` / `DEEPSEEK_*` aliases.
+    `OPENAI_*` / `DEEPSEEK_*` aliases. The aliases and the optional
+    `LLM_THINKING` -> ``extra_body["thinking"]`` convenience exist because
+    OpenAI-compatible deployments are the common case; provider-specific
+    knobs still travel through ``extra_body``/``chat_kwargs`` as plain data.
     """
 
     def __init__(
