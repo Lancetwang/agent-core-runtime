@@ -1,7 +1,18 @@
 import unittest
 from typing import Annotated
 
-from agent_core import Agent, CallableNode, ExecResult, Flow, FlowError, ModelNode, Node, ToolRouterNode, tool
+from agent_core import (
+    Agent,
+    CallableNode,
+    ExecResult,
+    Flow,
+    FlowError,
+    ModelNode,
+    Node,
+    RunContext,
+    ToolRouterNode,
+    tool,
+)
 
 
 class AgentCorePackageTests(unittest.TestCase):
@@ -251,6 +262,20 @@ class AgentCorePackageTests(unittest.TestCase):
 
         self.assertEqual(agent.flow.start.__class__.__name__, "ModelNode")
         self.assertIsNone(agent.flow.start.model)
+
+    def test_agent_message_scopes_are_distinct_and_address_free(self) -> None:
+        first = Agent(Flow(CallableNode(lambda payload: payload)), instructions="One.")
+        second = Agent(Flow(CallableNode(lambda payload: payload)), instructions="Two.")
+        shared = RunContext()
+
+        first.run({}, context=shared)
+        second.run({}, context=shared)
+
+        scopes = list(shared.message_scopes)
+        self.assertEqual(len(scopes), 2)
+        self.assertTrue(all(name.startswith("agent:") for name in scopes))
+        self.assertNotIn(f"{id(first)}", scopes)
+        self.assertNotIn(f"{id(second)}", scopes)
 
     def test_agent_run_respects_constructor_max_steps(self) -> None:
         looping = CallableNode(lambda payload: payload)

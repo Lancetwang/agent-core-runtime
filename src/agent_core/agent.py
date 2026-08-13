@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+import uuid
 
 from agent_core.core import (
     Action,
@@ -64,7 +65,10 @@ class Agent(Node):
 
         self.flow = flow
         self.instructions = instructions
-        self._message_scope = f"agent:{id(self)}"
+        # A random, address-free scope name: id(self) leaked memory addresses
+        # into message_scopes keys and to_dict() output and could be reused
+        # after garbage collection, letting two successive agents share a scope.
+        self._message_scope = f"agent:{uuid.uuid4().hex}"
         self._instruction_marker = f"agent_core.instructions.{self._message_scope}"
         if action is None or (action is not _INHERIT_ACTION and not isinstance(action, str)):
             raise TypeError(
