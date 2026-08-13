@@ -6,6 +6,7 @@ from agent_core.core.context import (
     reset_current_context,
     set_current_context,
 )
+from agent_core.core.keys import PayloadKeys
 from agent_core.core.node import (
     Action,
     CallableNode,
@@ -31,6 +32,7 @@ __all__ = [
     "FlowError",
     "FlowRunResult",
     "Node",
+    "PayloadKeys",
     "RunContext",
     "RunUsage",
     "TraceEvent",

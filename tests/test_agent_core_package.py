@@ -9,6 +9,7 @@ from agent_core import (
     FlowError,
     ModelNode,
     Node,
+    PayloadKeys,
     RunContext,
     ToolRouterNode,
     tool,
@@ -33,6 +34,16 @@ class AgentCorePackageTests(unittest.TestCase):
     def test_agent_core_exports_llm_nodes(self) -> None:
         self.assertEqual(ModelNode.__name__, "ModelNode")
         self.assertEqual(ToolRouterNode.__name__, "ToolRouterNode")
+
+    def test_builtin_defaults_reference_canonical_payload_keys(self) -> None:
+        model_node = ModelNode()
+        router = ToolRouterNode()
+
+        self.assertEqual(model_node.assistant_key, PayloadKeys.ASSISTANT_MESSAGE)
+        self.assertEqual(model_node.messages_key, PayloadKeys.HISTORY)
+        self.assertEqual(model_node.chat_kwargs_key, PayloadKeys.CHAT_KWARGS)
+        self.assertEqual(router.assistant_key, PayloadKeys.ASSISTANT_MESSAGE)
+        self.assertEqual(router.output_key, PayloadKeys.ANSWER)
 
     def test_agent_can_be_declared_from_model_prompt_and_tools(self) -> None:
         class FakeChatModel:

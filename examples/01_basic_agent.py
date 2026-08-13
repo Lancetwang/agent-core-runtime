@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from agent_core import Agent, CallableNode, ExecResult, Flow, make_trace_options
+from agent_core import Agent, CallableNode, ExecResult, Flow, PayloadKeys, make_trace_options
 
 
 def classify(payload: dict) -> ExecResult:
-    text = str(payload["input"]).strip()
+    text = str(payload[PayloadKeys.INPUT]).strip()
     payload["kind"] = "question" if text.endswith("?") else "statement"
     return ExecResult(payload["kind"], payload)
 
 
 def answer_question(payload: dict) -> dict:
-    payload["answer"] = f"Question received: {payload['input']}"
+    payload[PayloadKeys.ANSWER] = f"Question received: {payload[PayloadKeys.INPUT]}"
     return payload
 
 
 def answer_statement(payload: dict) -> dict:
-    payload["answer"] = f"Statement received: {payload['input']}"
+    payload[PayloadKeys.ANSWER] = f"Statement received: {payload[PayloadKeys.INPUT]}"
     return payload
 
 
@@ -33,11 +33,11 @@ def build_agent() -> Agent:
 def main() -> None:
     agent = build_agent()
     result = agent.run(
-        {"input": "How does a flow choose the next node?"},
+        {PayloadKeys.INPUT: "How does a flow choose the next node?"},
         trace=make_trace_options(enabled=True, include=["node", "flow"]),
     )
 
-    print(result.payload["answer"])
+    print(result.payload[PayloadKeys.ANSWER])
     print("path:", " -> ".join(result.path))
     print("trace events:", len(result.trace))
 

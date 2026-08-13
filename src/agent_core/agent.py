@@ -10,6 +10,7 @@ from agent_core.core import (
     Flow,
     FlowRunResult,
     Node,
+    PayloadKeys,
     RunContext,
     TraceOptions,
     get_current_context,
@@ -105,21 +106,21 @@ class Agent(Node):
         if run_context is None:
             run_context = RunContext()
         run_context.add_message("user", text if content is None else content, scope=self._message_scope)
-        state = {"input": text, **dict(payload or {})}
-        chat_kwargs = dict(state.get("chat_kwargs", {}) or {})
+        state = {PayloadKeys.INPUT: text, **dict(payload or {})}
+        chat_kwargs = dict(state.get(PayloadKeys.CHAT_KWARGS, {}) or {})
         if stream is not None:
             chat_kwargs["stream"] = stream
         if on_delta is not None:
             chat_kwargs["on_delta"] = on_delta
         if chat_kwargs:
-            state["chat_kwargs"] = chat_kwargs
+            state[PayloadKeys.CHAT_KWARGS] = chat_kwargs
         result = self.run(
             state,
             max_steps=max_steps,
             trace=trace,
             context=run_context,
         )
-        return str(result.payload.get("answer", ""))
+        return str(result.payload.get(PayloadKeys.ANSWER, ""))
 
     def run(
         self,

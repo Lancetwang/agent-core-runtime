@@ -52,6 +52,15 @@ result = Flow(start_node).run(payload, max_steps=100, trace=None, context=None)
 ```
 
 Raises `FlowError` when the flow has no start node or exceeds `max_steps`.
+Nested flows share one step budget: an inner flow may not burn more steps
+than the enclosing run has left.
+
+### `PayloadKeys`
+
+Canonical payload state keys used by the built-in nodes: `INPUT`, `ANSWER`,
+`ASSISTANT_MESSAGE`, `HISTORY`, `CHAT_KWARGS`, `TOOL_RESULTS`. Custom flows
+should use these names instead of literal strings when touching the built-in
+contract, so a typo cannot silently produce an empty answer.
 
 ### `FlowRunResult`
 

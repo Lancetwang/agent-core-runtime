@@ -11,6 +11,7 @@ from agent_core import (
     ExecResult,
     Flow,
     ModelNode,
+    PayloadKeys,
     RunContext,
     ToolCallNode,
     ToolExecutor,
@@ -58,7 +59,7 @@ def tell_joke(
 def prepare_final_response(payload: dict) -> ExecResult:
     state = dict(payload)
     if state.get("stream"):
-        state["chat_kwargs"] = {"stream": True, "on_delta": print_delta}
+        state[PayloadKeys.CHAT_KWARGS] = {"stream": True, "on_delta": print_delta}
     return ExecResult("chat", state)
 
 
@@ -166,7 +167,7 @@ def main() -> None:
             trace=False,
             max_steps=12,
         )
-        answer = str(result.payload.get("answer", ""))
+        answer = str(result.payload.get(PayloadKeys.ANSWER, ""))
         context.set_artifact("last_answer", answer)
 
         if stream and count_model_deltas(context) > delta_count_before:

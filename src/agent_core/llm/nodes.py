@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from agent_core.core import ExecResult, Flow, Node
+from agent_core.core import ExecResult, Flow, Node, PayloadKeys
 from agent_core.core.context import get_current_context
 from agent_core.llm.client import ChatModel, LLM, Message
 from agent_core.tools import Tool, ToolCallNode, ToolExecutor
@@ -30,11 +30,11 @@ class ModelNode(Node):
         model: ChatModel | None = None,
         messages: MessageBuilder | None = None,
         tools: ToolProvider | None = None,
-        assistant_key: str = "assistant_message",
-        messages_key: str = "history",
+        assistant_key: str = PayloadKeys.ASSISTANT_MESSAGE,
+        messages_key: str = PayloadKeys.HISTORY,
         action: str = "default",
         chat_kwargs: Mapping[str, Any] | None = None,
-        chat_kwargs_key: str = "chat_kwargs",
+        chat_kwargs_key: str = PayloadKeys.CHAT_KWARGS,
         append_message: bool = True,
     ) -> None:
         super().__init__()
@@ -165,8 +165,8 @@ class ToolRouterNode(Node):
     def __init__(
         self,
         *,
-        assistant_key: str = "assistant_message",
-        output_key: str = "answer",
+        assistant_key: str = PayloadKeys.ASSISTANT_MESSAGE,
+        output_key: str = PayloadKeys.ANSWER,
         tool_action: str = "tool_call",
         done_action: str = "final",
     ) -> None:
@@ -201,9 +201,9 @@ def _minimal_agent_loop(
     messages: MessageBuilder | None = None,
     tools: Sequence[Tool],
     chat_kwargs: Mapping[str, Any] | None = None,
-    assistant_key: str = "assistant_message",
-    messages_key: str = "history",
-    output_key: str = "answer",
+    assistant_key: str = PayloadKeys.ASSISTANT_MESSAGE,
+    messages_key: str = PayloadKeys.HISTORY,
+    output_key: str = PayloadKeys.ANSWER,
 ) -> Flow:
     """Build the standard model -> router -> tools -> model chat loop."""
     chat_kwargs = {"stream": True, **dict(chat_kwargs or {})}

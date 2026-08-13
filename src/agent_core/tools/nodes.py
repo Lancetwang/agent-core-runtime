@@ -1,6 +1,6 @@
 from typing import Any
 
-from agent_core.core import ExecResult, Node
+from agent_core.core import ExecResult, Node, PayloadKeys
 from agent_core.core.context import get_current_context
 from agent_core.tools.executor import ToolExecutor
 
@@ -18,9 +18,9 @@ class ToolCallNode(Node):
         self,
         *,
         executor: ToolExecutor | None = None,
-        assistant_key: str = "assistant_message",
-        messages_key: str = "history",
-        results_key: str = "tool_results",
+        assistant_key: str = PayloadKeys.ASSISTANT_MESSAGE,
+        messages_key: str = PayloadKeys.HISTORY,
+        results_key: str = PayloadKeys.TOOL_RESULTS,
         next_action: str = "chat",
     ) -> None:
         super().__init__()
