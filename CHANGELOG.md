@@ -6,13 +6,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-20
+
 ### Added
 
-- Cooperative cancellation: `Flow.run`, `Agent.run`, `Agent.chat`, and
-  `ToolExecutor.execute_all` accept a `threading.Event` checked between
-  steps and tool calls. A cancelled run emits `flow.cancel` and raises the
-  new `FlowCancelled` (a `FlowError` subclass, never retried by `Node`).
-  Nested runs inherit the enclosing run's cancel event.
+- Native async execution across the node runtime: override `Node.aexec`, run
+  any graph with `Flow.arun`, and use `Agent.arun` / `Agent.achat`. Existing
+  synchronous nodes run in worker threads, while `ModelNode`, `ToolCallNode`,
+  `ToolExecutor`, and the default `LLM` use native async paths when available.
+- `AsyncChatModel` and `LLM.achat_message` with `AsyncOpenAI` streaming,
+  reasoning deltas, tool calls, and usage aggregation.
+- `ToolLoopGuardNode`, a regular routable node with `continue`, `warn`, and
+  `halt` actions. The built-in Agent loop uses it to warn on repeated
+  no-progress tool calls, then disables tools for a final text-only answer.
+- `report_tool_progress(value)` lets sync or async tools publish live-only
+  `tool.progress` events without adding runtime-only parameters to their JSON
+  schema.
+- Every `AgentEvent` has a monotonic per-context `seq`; `RunUsage` also tracks
+  cached prompt tokens across common OpenAI and Anthropic usage shapes.
+- Cooperative cancellation: synchronous entry points accept a
+  `threading.Event`, while async entry points also accept `asyncio.Event` and
+  propagate task cancellation. Events are checked between steps and tool
+  calls. A cancelled run emits `flow.cancel` and raises the new
+  `FlowCancelled` (a `FlowError` subclass, never retried by `Node`). Nested
+  runs inherit the enclosing run's cancel event.
 - `python -m agent_core chat` starts an interactive chat REPL built from
   `Agent` + `LLM` (`--instructions`, `--max-steps`, `--no-stream`).
 - CI now lints with ruff, type-checks the public source with Pyright, enforces
@@ -20,10 +37,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- `CallableNode` now supports explicit `ExecResult(action, payload)` routing
-  and a `route_plain_tuples=False` mode for tuple-shaped business payloads.
-  Plain tuple routing remains enabled with a `DeprecationWarning` for 0.1.x
-  compatibility.
+- `CallableNode` routes only explicit `ExecResult(action, payload)` values by
+  default. Plain `(str, value)` tuples are now unambiguously business payloads;
+  `route_plain_tuples=True` temporarily restores the deprecated 0.1 behavior.
 - `Agent.run` / `Agent.chat` now default their `max_steps` to the
   constructor budget instead of an independent hard-coded 100.
 - Nested flows share one step counter: every inner node visit is debited from
@@ -38,17 +54,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   so a conversation seeded through unscoped `context.add_message` calls is
   visible to the model while other agents' scoped messages stay isolated.
 - `model.delta` / `model.reasoning.delta` are live-only (`notify`, no longer
-  retained). The built-in Agent loop also retains metadata-only tool events
-  and sends full payloads through observe-only events, avoiding another copy
-  in `tool.call` / `tool.result` records. Directly constructed
-  `ToolCallNode`s retain the 0.1.x full event data by default for compatibility
-  and can opt into metadata-only retention with `retain_event_payloads=False`.
-  Trace collection captures live events regardless of retention.
+  retained). All `ToolCallNode` instances now retain metadata-only tool events
+  and send full payloads through observe-only events, avoiding another copy
+  in `tool.call` / `tool.result` records. Full retained payloads require the
+  explicit `retain_event_payloads=True` compatibility option. `message.add`
+  events likewise retain field names rather than message content. Trace
+  collection captures live events regardless of retention.
 - Default trace categories dropped the never-emitted `llm` and `plan`
   entries and are now `{"flow", "node", "tool", "model"}`.
 
 ### Fixed
 
+- OpenAI-compatible streams without tool-call `index` fields no longer merge
+  several parallel calls into one corrupted call. Missing and duplicate call
+  IDs are normalized in both the model adapter and tool executor so assistant
+  messages and results remain pairable.
 - Tool schema generation now unwraps `Annotated` recursively inside
   containers, unions, and TypedDict fields, so nested item descriptions no
   longer raise `ToolDefinitionError`.
