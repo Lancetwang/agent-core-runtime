@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import threading
 import time
 import warnings
@@ -27,9 +29,8 @@ class ExecResult(tuple):
 
     Subclasses ``tuple``, so existing destructuring (``action, payload =
     node.exec(...)``) keeps working, but instances are distinguishable from
-    plain data tuples. ``CallableNode`` always treats an :class:`ExecResult`
-    as routing; tuple-shape inference remains available as a 0.1.x
-    compatibility mode.
+    plain data tuples. ``CallableNode`` treats only :class:`ExecResult` as
+    routing by default; tuple-shape inference is an explicit legacy mode.
     """
 
     __slots__ = ()
@@ -93,6 +94,29 @@ class Node:
                     time.sleep(self.wait)
         raise RuntimeError("Unexpected error in Node._exec")
 
+    async def aexec(self, payload: Any) -> tuple[Action, Any]:
+        """Asynchronously execute this node.
+
+        Synchronous nodes work unchanged: their ``exec`` method is moved to a
+        worker thread so it does not block the event loop. Native async nodes
+        override this method directly.
+        """
+        return await asyncio.to_thread(self.exec, payload)
+
+    async def _aexec(self, payload: Any) -> tuple[Action, Any]:
+        """Retry-aware async counterpart of :meth:`_exec`."""
+        for attempt in range(self.max_retries):
+            try:
+                return await self.aexec(payload)
+            except FlowCancelled:
+                raise
+            except Exception:
+                if attempt == self.max_retries - 1:
+                    raise
+                if self.wait > 0:
+                    await asyncio.sleep(self.wait)
+        raise RuntimeError("Unexpected error in Node._aexec")
+
     def add_edge(self, action: Action, successor: Node) -> Node:
         """Wire ``action`` to ``successor`` programmatically and return it.
 
@@ -152,17 +176,17 @@ class CallableNode(Node):
     """Adapt a plain function into a node.
 
     The function receives the payload. If it returns ``ExecResult(action,
-    payload)`` that pair is used as-is. For 0.1.x compatibility, a plain
-    ``(str, value)`` tuple is also routed by default; pass
-    ``route_plain_tuples=False`` when tuples are business payloads. Any other
-    return value is wrapped as ``("default", value)``.
+    payload)`` that pair is used as-is. A plain ``(str, value)`` tuple is
+    business data by default; pass ``route_plain_tuples=True`` only while
+    migrating 0.1.x routing functions. Any other return value is wrapped as
+    ``("default", value)``.
     """
 
     def __init__(
         self,
         fn: Callable[[Any], ExecResult | Any],
         *,
-        route_plain_tuples: bool = True,
+        route_plain_tuples: bool = False,
         max_retries: int = 1,
         wait: float = 0,
     ) -> None:
@@ -174,11 +198,29 @@ class CallableNode(Node):
 
     def exec(self, payload: Any) -> ExecResult:
         result = self.fn(payload)
+        if inspect.isawaitable(result):
+            if inspect.iscoroutine(result):
+                result.close()
+            raise TypeError(
+                "CallableNode received an awaitable from its function during "
+                "Flow.run(); use Flow.arun() for async callables."
+            )
+        return self._coerce_result(result)
+
+    async def aexec(self, payload: Any) -> ExecResult:
+        if inspect.iscoroutinefunction(self.fn):
+            result = self.fn(payload)
+        else:
+            result = await asyncio.to_thread(self.fn, payload)
+        if inspect.isawaitable(result):
+            result = await result
+        return self._coerce_result(result)
+
+    def _coerce_result(self, result: Any) -> ExecResult:
         if isinstance(result, ExecResult):
             return result
-        # Keep the 0.1.x CallableNode contract available while callers migrate
-        # routing functions to explicit ExecResult values. Tuple-shaped
-        # business data can opt out immediately with route_plain_tuples=False.
+        # Keep the 0.1.x contract as an explicit migration switch without
+        # making tuple-shaped business data ambiguous for new callers.
         if self.route_plain_tuples and self._is_legacy_exec_result(result):
             warnings.warn(
                 "Returning a plain (action, payload) tuple from CallableNode is "
@@ -233,6 +275,7 @@ class Flow:
         context: RunContext | None = None,
         cancel: threading.Event | None = None,
     ) -> FlowRunResult:
+        _validate_max_steps(max_steps)
         if self.start is None:
             raise FlowError("Flow has no start node. Construct it as Flow(start_node).")
         current = self.start
@@ -247,6 +290,7 @@ class Flow:
         # as streamed model deltas.
         trace_events: list[TraceEvent] = []
         if trace_options.enabled:
+
             def on_event(event: TraceEvent) -> None:
                 if previous_on_event is not None:
                     previous_on_event(event)
@@ -303,6 +347,19 @@ class Flow:
                         )
                     if last_action == "":
                         last_action = "default"
+                except FlowCancelled as exc:
+                    run_context.set_execution_context(step=step, node=node_name)
+                    run_context.emit(
+                        "node.cancel",
+                        category="node",
+                        data={"message": str(exc)},
+                    )
+                    run_context.emit(
+                        "flow.cancel",
+                        category="flow",
+                        data={"message": str(exc)},
+                    )
+                    raise
                 except Exception as exc:
                     error = {"error_type": type(exc).__name__, "message": str(exc)}
                     run_context.set_execution_context(step=step, node=node_name)
@@ -312,6 +369,160 @@ class Flow:
                 # Align with the wiring DSL, which normalizes empty action
                 # names to "default": a node returning "" routes to the
                 # "default" successor instead of silently ending the flow.
+                next_node = current.successors.get(last_action)
+                run_context.set_execution_context(step=step, node=node_name)
+                run_context.emit(
+                    "node.end",
+                    category="node",
+                    action=last_action,
+                    data={"next_node": next_node.__class__.__name__ if next_node else None},
+                )
+                if next_node is None:
+                    run_context.set_execution_context(step=step, node=None)
+                    run_context.emit("flow.end", category="flow", step=step, node=None)
+                    return FlowRunResult(
+                        action=last_action,
+                        payload=payload,
+                        path=path,
+                        trace=[
+                            event
+                            for event in trace_events
+                            if trace_options.includes(event.category)
+                        ],
+                        context=run_context,
+                        usage=run_context.usage.since(usage_start),
+                    )
+                current = next_node
+
+            error = FlowError(
+                f"Flow exceeded max_steps={max_steps}. "
+                "Raise max_steps for long runs, or check the graph for "
+                "an action cycle that never ends."
+            )
+            run_context.emit(
+                "flow.error",
+                category="flow",
+                data={"error_type": type(error).__name__, "message": str(error)},
+            )
+            raise error
+        finally:
+            _FLOW_CANCEL.reset(cancel_token)
+            _STEP_BUDGET.reset(budget_token)
+            if trace_options.enabled:
+                run_context.on_event = previous_on_event
+            reset_current_context(context_token)
+
+    async def arun(
+        self,
+        payload: Any = None,
+        *,
+        max_steps: int = 100,
+        trace: TraceOptions | bool | None = None,
+        context: RunContext | None = None,
+        cancel: threading.Event | asyncio.Event | None = None,
+    ) -> FlowRunResult:
+        """Asynchronously run the same node graph as :meth:`run`.
+
+        Native async nodes override :meth:`Node.aexec`; ordinary synchronous
+        nodes are executed in worker threads. Task cancellation propagates
+        immediately, while an optional threading/asyncio event is checked at
+        every node boundary and inherited by nested async flows.
+        """
+        _validate_max_steps(max_steps)
+        if self.start is None:
+            raise FlowError("Flow has no start node. Construct it as Flow(start_node).")
+        current = self.start
+        last_action: Action | None = None
+        path: list[str] = []
+        run_context = context if context is not None else RunContext()
+        trace_options = TraceOptions.from_value(trace)
+        usage_start = run_context.usage.snapshot()
+        previous_on_event = run_context.on_event
+        trace_events: list[TraceEvent] = []
+        if trace_options.enabled:
+
+            def on_event(event: TraceEvent) -> None:
+                if previous_on_event is not None:
+                    previous_on_event(event)
+                trace_events.append(event)
+                trace_options.dispatch(event)
+
+            run_context.on_event = on_event
+        context_token = set_current_context(run_context)
+
+        shared_budget = _STEP_BUDGET.get()
+        if shared_budget is None:
+            shared_budget = _StepBudget(max_steps)
+        budget_token = _STEP_BUDGET.set(shared_budget)
+
+        cancel_event = cancel if cancel is not None else _FLOW_CANCEL.get()
+        cancel_token = _FLOW_CANCEL.set(cancel_event)
+        try:
+            for step in range(1, max_steps + 1):
+                node_name = current.__class__.__name__
+                run_context.set_execution_context(step=step, node=node_name)
+                if cancel_event is not None and cancel_event.is_set():
+                    run_context.emit(
+                        "flow.cancel",
+                        category="flow",
+                        step=step,
+                        data={"step": step},
+                    )
+                    raise FlowCancelled(f"Flow cancelled at step {step}.")
+                if not shared_budget.consume():
+                    error = FlowError(
+                        f"Flow exhausted shared max_steps={shared_budget.limit}. "
+                        "Nested flow steps count toward the enclosing run budget."
+                    )
+                    run_context.emit(
+                        "flow.error",
+                        category="flow",
+                        data={"error_type": type(error).__name__, "message": str(error)},
+                    )
+                    raise error
+                path.append(node_name)
+                run_context.emit("node.start", category="node")
+                try:
+                    last_action, payload = await current._aexec(payload)
+                    if not isinstance(last_action, str):
+                        raise TypeError(
+                            f"{node_name}.aexec(payload) returned a non-string action: "
+                            f"{last_action!r}."
+                        )
+                    if last_action == "":
+                        last_action = "default"
+                except FlowCancelled as exc:
+                    run_context.set_execution_context(step=step, node=node_name)
+                    run_context.emit(
+                        "node.cancel",
+                        category="node",
+                        data={"message": str(exc)},
+                    )
+                    run_context.emit(
+                        "flow.cancel",
+                        category="flow",
+                        data={"message": str(exc)},
+                    )
+                    raise
+                except asyncio.CancelledError:
+                    run_context.set_execution_context(step=step, node=node_name)
+                    run_context.emit(
+                        "node.cancel",
+                        category="node",
+                        data={"message": "async task cancelled"},
+                    )
+                    run_context.emit(
+                        "flow.cancel",
+                        category="flow",
+                        data={"message": "async task cancelled"},
+                    )
+                    raise
+                except Exception as exc:
+                    error = {"error_type": type(exc).__name__, "message": str(exc)}
+                    run_context.set_execution_context(step=step, node=node_name)
+                    run_context.emit("node.error", category="node", data=error)
+                    run_context.emit("flow.error", category="flow", data=error)
+                    raise
                 next_node = current.successors.get(last_action)
                 run_context.set_execution_context(step=step, node=node_name)
                 run_context.emit(
@@ -377,7 +588,13 @@ _STEP_BUDGET: ContextVar[_StepBudget | None] = ContextVar(
     default=None,
 )
 
-_FLOW_CANCEL: ContextVar[threading.Event | None] = ContextVar(
+
+def _validate_max_steps(max_steps: int) -> None:
+    if not isinstance(max_steps, int) or isinstance(max_steps, bool) or max_steps < 1:
+        raise ValueError(f"max_steps must be a positive integer, got {max_steps!r}.")
+
+
+_FLOW_CANCEL: ContextVar[threading.Event | asyncio.Event | None] = ContextVar(
     "agent_core_flow_cancel",
     default=None,
 )

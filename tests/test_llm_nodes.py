@@ -49,6 +49,14 @@ def build_messages(payload: dict) -> list[dict]:
 
 
 class LlmNodeTests(unittest.TestCase):
+    def test_sync_flow_rejects_async_only_model_with_migration_hint(self) -> None:
+        class AsyncOnlyModel:
+            async def achat_message(self, messages, **kwargs):
+                return {"role": "assistant", "content": "hello"}
+
+        with self.assertRaisesRegex(RuntimeError, "only AsyncChatModel"):
+            Flow(ModelNode(model=AsyncOnlyModel())).run({"history": []})
+
     def test_model_node_stores_assistant_message(self) -> None:
         model = FakeChatModel(
             [
@@ -82,7 +90,13 @@ class LlmNodeTests(unittest.TestCase):
         )
         self.assertEqual(
             result.usage.to_dict(),
-            {"requests": 1, "input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+            {
+                "requests": 1,
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "total_tokens": 3,
+                "cached_tokens": None,
+            },
         )
 
     def test_model_node_does_not_mutate_input_history(self) -> None:
@@ -216,9 +230,7 @@ class LlmNodeTests(unittest.TestCase):
 
         result = Flow(node).run({"history": [{"role": "user", "content": "hi"}]}, trace=True)
 
-        delta_events = [
-            event for event in result.trace if event.type == "model.delta"
-        ]
+        delta_events = [event for event in result.trace if event.type == "model.delta"]
         self.assertEqual(
             [event.data["content"] for event in delta_events],
             ["hel", "lo"],
@@ -364,7 +376,14 @@ class LlmNodeTests(unittest.TestCase):
         self.assertEqual(result.payload["answer"], "Shanghai is sunny.")
         self.assertEqual(
             result.path,
-            ["ModelNode", "ToolRouterNode", "ToolCallNode", "ModelNode", "ToolRouterNode"],
+            [
+                "ModelNode",
+                "ToolRouterNode",
+                "ToolCallNode",
+                "ToolLoopGuardNode",
+                "ModelNode",
+                "ToolRouterNode",
+            ],
         )
         self.assertEqual(model.requests[0]["tool_choice"], "auto")
         self.assertEqual(model.requests[1]["messages"][-1]["role"], "tool")

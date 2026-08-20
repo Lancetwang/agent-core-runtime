@@ -167,6 +167,7 @@ class ToolErrorMessageTests(unittest.TestCase):
 
     def test_tool_definition_error_names_the_function(self) -> None:
         with self.assertRaisesRegex(ToolDefinitionError, "unannotated"):
+
             @tool(description="Missing parameter annotation.")
             def unannotated(value) -> str:  # type: ignore[no-untyped-def]
                 return str(value)

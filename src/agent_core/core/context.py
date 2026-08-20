@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -16,6 +17,7 @@ class AgentEvent:
     type: str
     category: str = "runtime"
     run_id: str = ""
+    seq: int = 0
     step: int | None = None
     node: str | None = None
     action: str | None = None
@@ -27,6 +29,7 @@ class AgentEvent:
             "type": self.type,
             "category": self.category,
             "run_id": self.run_id,
+            "seq": self.seq,
             "step": self.step,
             "node": self.node,
             "action": self.action,
@@ -43,11 +46,17 @@ class RunUsage:
     usage_requests: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0
+    cached_usage_requests: int = 0
 
     def record(self, usage: Mapping[str, Any] | None) -> None:
         self.requests += 1
         if not isinstance(usage, Mapping):
             return
+        cached_tokens = _cached_usage_int(usage)
+        if cached_tokens is not None:
+            self.cached_usage_requests += 1
+            self.cached_tokens += cached_tokens
         input_tokens = _usage_int(usage, "input_tokens", "prompt_tokens")
         output_tokens = _usage_int(usage, "output_tokens", "completion_tokens")
         if input_tokens is None or output_tokens is None:
@@ -62,6 +71,8 @@ class RunUsage:
             usage_requests=self.usage_requests,
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
+            cached_tokens=self.cached_tokens,
+            cached_usage_requests=self.cached_usage_requests,
         )
 
     def since(self, previous: RunUsage) -> RunUsage:
@@ -70,6 +81,8 @@ class RunUsage:
             usage_requests=self.usage_requests - previous.usage_requests,
             input_tokens=self.input_tokens - previous.input_tokens,
             output_tokens=self.output_tokens - previous.output_tokens,
+            cached_tokens=self.cached_tokens - previous.cached_tokens,
+            cached_usage_requests=(self.cached_usage_requests - previous.cached_usage_requests),
         )
 
     def to_dict(self) -> dict[str, int | None]:
@@ -77,11 +90,13 @@ class RunUsage:
         input_tokens = self.input_tokens if exact else None
         output_tokens = self.output_tokens if exact else None
         total_tokens = self.input_tokens + self.output_tokens if exact else None
+        cached_tokens = self.cached_tokens if self.cached_usage_requests else None
         return {
             "requests": self.requests,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
+            "cached_tokens": cached_tokens,
         }
 
 
@@ -108,6 +123,12 @@ class RunContext:
     on_observation: Callable[[AgentEvent], None] | None = None
     step: int | None = None
     node: str | None = None
+    _sequence: int = field(default=0, init=False, repr=False)
+    _event_lock: threading.Lock = field(
+        default_factory=threading.Lock,
+        init=False,
+        repr=False,
+    )
 
     def set_execution_context(
         self,
@@ -133,16 +154,16 @@ class RunContext:
         Use for events the run should remember (they drive UIs and traces).
         For large payloads that should not stay in memory, use :meth:`observe`.
         """
-        event = AgentEvent(
-            type=type,
-            category=category,
-            run_id=self.run_id,
-            step=self.step if step is None else step,
-            node=self.node if node is None else node,
-            action=action,
-            data=dict(data or {}),
-        )
-        self.events.append(event)
+        with self._event_lock:
+            event = self._make_event(
+                type,
+                category=category,
+                step=step,
+                node=node,
+                action=action,
+                data=data,
+            )
+            self.events.append(event)
         if self.on_observation is not None:
             self.on_observation(event)
         if self.on_event is not None:
@@ -162,15 +183,15 @@ class RunContext:
         """Send a detailed observation without retaining it in runtime memory."""
         if self.on_observation is None:
             return None
-        event = AgentEvent(
-            type=type,
-            category=category,
-            run_id=self.run_id,
-            step=self.step if step is None else step,
-            node=self.node if node is None else node,
-            action=action,
-            data=dict(data or {}),
-        )
+        with self._event_lock:
+            event = self._make_event(
+                type,
+                category=category,
+                step=step,
+                node=node,
+                action=action,
+                data=data,
+            )
         self.on_observation(event)
         return event
 
@@ -191,15 +212,15 @@ class RunContext:
         """
         if self.on_event is None:
             return None
-        event = AgentEvent(
-            type=type,
-            category=category,
-            run_id=self.run_id,
-            step=self.step if step is None else step,
-            node=self.node if node is None else node,
-            action=action,
-            data=dict(data or {}),
-        )
+        with self._event_lock:
+            event = self._make_event(
+                type,
+                category=category,
+                step=step,
+                node=node,
+                action=action,
+                data=data,
+            )
         self.on_event(event)
         return event
 
@@ -219,7 +240,11 @@ class RunContext:
         self.emit(
             "message.add",
             category="message",
-            data={"role": role, "content": content, "scope": scope, **extra},
+            data={
+                "role": role,
+                "scope": scope,
+                "fields": sorted(extra),
+            },
         )
         return message
 
@@ -254,8 +279,7 @@ class RunContext:
             "run_id": self.run_id,
             "messages": list(self.messages),
             "message_scopes": {
-                name: list(messages)
-                for name, messages in self.message_scopes.items()
+                name: list(messages) for name, messages in self.message_scopes.items()
             },
             "active_message_scope": self.active_message_scope,
             "artifacts": dict(self.artifacts),
@@ -264,6 +288,29 @@ class RunContext:
             "events": [event.to_dict() for event in self.events],
         }
 
+    def _make_event(
+        self,
+        type: str,
+        *,
+        category: str,
+        step: int | None,
+        node: str | None,
+        action: str | None,
+        data: Mapping[str, Any] | None,
+    ) -> AgentEvent:
+        """Create one sequenced event while ``_event_lock`` is held."""
+        self._sequence += 1
+        return AgentEvent(
+            type=type,
+            category=category,
+            run_id=self.run_id,
+            seq=self._sequence,
+            step=self.step if step is None else step,
+            node=self.node if node is None else node,
+            action=action,
+            data=dict(data or {}),
+        )
+
 
 def _usage_int(usage: Mapping[str, Any], *names: str) -> int | None:
     for name in names:
@@ -271,6 +318,26 @@ def _usage_int(usage: Mapping[str, Any], *names: str) -> int | None:
         if isinstance(value, int):
             return value
     return None
+
+
+def _cached_usage_int(usage: Mapping[str, Any]) -> int | None:
+    """Read cached prompt tokens from common OpenAI/Anthropic usage shapes."""
+    cache_read = _usage_int(usage, "cache_read_input_tokens")
+    cache_write = _usage_int(usage, "cache_creation_input_tokens")
+    if cache_read is not None or cache_write is not None:
+        return (cache_read or 0) + (cache_write or 0)
+
+    for details_name in ("prompt_tokens_details", "input_tokens_details"):
+        details = usage.get(details_name)
+        if isinstance(details, Mapping):
+            cached = _usage_int(details, "cached_tokens")
+            if cached is not None:
+                return cached
+    return _usage_int(
+        usage,
+        "cached_tokens",
+        "prompt_cache_hit_tokens",
+    )
 
 
 _CURRENT_RUN_CONTEXT: ContextVar[RunContext | None] = ContextVar(

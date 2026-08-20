@@ -6,7 +6,7 @@
 
 [English README](README.md) · [API 参考](docs/api.md) · [设计说明](docs/agent-core.md) · [更新日志](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
-Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个明确的元件：`Node`、`Flow`、`RunContext`、`Tool` 和 `Agent`。
+Agent Core Runtime 是一个轻量级、以节点为基础的 Python agent runtime。它用 `Node`、`Flow`、`RunContext`、`Tool` 和 `Agent` 这些明确元件构建工具 agent 与 workflow。
 
 ## 这个项目提供什么
 
@@ -15,8 +15,9 @@ Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个�
 - `Node`：一个工作单元。
 - `Flow`：根据 action 名称把节点连接起来。
 - `Agent`：本身也是 `Node`，既可以单独运行，也可以嵌进更大的 flow。
-- `RunContext`：保存由调用方持有的会话 messages、events、metadata 和 artifacts。
+- `RunContext`：保存由调用方持有的会话 messages、events、usage、metadata 和 artifacts。
 - `payload`：在节点之间传递明确的业务数据，并作为 flow 的结果返回。
+- 同一张图可以用 `run` / `arun` 同步或异步执行；异步模型与工具走原生路径，同步节点会移出 event loop。
 - `@tool`：把带类型标注的 Python 函数转换成 OpenAI-compatible tool schema。
 - `LLM`：默认 OpenAI-compatible 模型，从构造参数或进程环境变量读取配置。
 
@@ -24,7 +25,7 @@ Agent Core Runtime 是一个轻量级 Python agent runtime。它只保留几个�
 
 ## 定位与边界
 
-Runtime 的故事刻意很小：它是"跑起一个 agent 的最小单元"；由于 `Agent` 本身就是 `Node`，同一套元件可以组合成顺序 workflow 或嵌套 agent 系统。它拥有的是**执行**：flow、模型与工具调用、以及调用方持有的 `RunContext`。执行模型是同步的；`parallel=True` 只为同一批工具提供有界线程并发。
+Runtime 的故事刻意很小：它是"跑起一个 agent 的最小单元"；由于 `Agent` 本身就是 `Node`，同一套元件可以组合成顺序 workflow 或嵌套 agent 系统。它拥有的是**执行**：flow、模型与工具调用、以及调用方持有的 `RunContext`。每张图都有同步和异步入口：`arun` 会直接 await 原生异步节点、模型和工具，并把普通同步节点放到工作线程；`parallel=True` 仍表示同一批工具内的有界并发。
 
 让产品成为"agent 产品"的那些东西都在它之上的 harness 里：提示词分层、会话持久化、上下文压缩、记忆、权限、验证循环和用户界面。[Friday](https://github.com/Lancetwang/friday) 是一个这样的 harness，它的[架构文档](https://github.com/Lancetwang/friday/blob/main/docs/architecture.md)从使用方视角描述了这条边界。
 
@@ -47,6 +48,7 @@ flowchart TD
     Flow -. "runtime context" .-> Context["RunContext"]
     Context --> Messages["messages"]
     Context --> Events["events"]
+    Context --> Usage["usage"]
     Context --> Artifacts["artifacts"]
     Context --> Metadata["metadata"]
 
@@ -56,7 +58,8 @@ flowchart TD
     ModelNode --> Router["ToolRouterNode"]
     Router -->|"tool_calls"| ToolNode["ToolCallNode"]
     ToolNode --> Tools["@tool 函数"]
-    ToolNode --> ModelNode
+    ToolNode --> Guard["ToolLoopGuardNode"]
+    Guard -->|"continue / warn / halt"| ModelNode
     Router -->|"没有 tool_calls"| Answer["answer"]
 ```
 
@@ -66,7 +69,7 @@ flowchart TD
 src/agent_core/
   agent.py              # Agent：直接聊天入口，也是可嵌套的 Node
   core/                 # Node, Flow, RunContext, trace events
-  llm/                  # LLM, ChatModel 协议, ModelNode, router
+  llm/                  # 模型协议, LLM, ModelNode, router, loop guard
   tools/                # @tool, ToolExecutor, ToolCallNode
 examples/
   01_basic_agent.py     # 只使用 Node 和 Flow
@@ -132,7 +135,7 @@ def build_model(api_key: str) -> LLM:
     )
 ```
 
-Core 不负责发现或解析 `.env` 文件。上层应用仍可自行加载 `.env`、系统钥匙串或数据库，也可以直接实现 `ChatModel`；Runtime 只依赖归一化后的模型边界。
+Core 不负责发现或解析 `.env` 文件。上层应用仍可自行加载 `.env`、系统钥匙串或数据库，也可以直接实现 `ChatModel` 和/或 `AsyncChatModel`；Runtime 只依赖归一化后的模型边界。
 
 ## 快速声明 Agent
 
@@ -156,6 +159,24 @@ context = agent.new_context()
 answer = agent.chat("Draft a short evaluation plan.", context=context)
 print(answer)
 ```
+
+应用本身已有 event loop 时，同一个 agent 可以直接异步运行：
+
+```python
+import asyncio
+
+async def main() -> None:
+    context = agent.new_context()
+    answer = await agent.achat("Draft a short evaluation plan.", context=context)
+    print(answer)
+
+asyncio.run(main())
+```
+
+异步 `@tool` 函数会被直接 await；同步工具和自定义节点也可以在
+`Agent.achat` / `Flow.arun` 下使用而不阻塞 event loop。取消外层 task
+会在当前 await 点取消异步 flow；但 Python 无法强制终止已经在工作线程中
+运行的同步函数。
 
 ## 自定义 Flow
 
@@ -195,6 +216,12 @@ team = Agent(Flow(researcher))
 
 当 `Agent` 作为节点使用时，它默认会把内部 flow 的最终 action 暴露给外层 flow。只有当你希望它固定返回某个外部 action 时，才需要传 `action="some_action"`。
 
+标准工具循环内置一个普通的 `ToolLoopGuardNode`。同一工具调用持续得到
+相同结果时，它会先要求模型换一种方法；再次无进展时会关闭工具，并让模型
+给出一次最终的纯文本答案。只有外层 workflow 已经实现自己的无进展策略时，
+才建议向 `Agent(...)` 传 `loop_guard=False`。自定义 flow 也可以像连接其他
+节点一样连接它的 `continue`、`warn`、`halt` action。
+
 ## 示例
 
 按顺序运行：
@@ -232,6 +259,17 @@ messages、events 和累计 usage 会随之延续，而 `FlowRunResult.usage` �
 
 使用 OpenAI 兼容接口进行流式调用时，正文通过 `model.delta` 事件输出，
 供应商返回的思考内容通过 `model.reasoning.delta` 独立输出，Harness 可以分别渲染。
+工具可以调用 `report_tool_progress(value)` 发出只用于实时显示的
+`tool.progress`，无需把 runtime 参数暴露进工具 schema。
+
+每个实际投递的 event 都带有 context 内单调递增的 `seq`，即使多个并行工具
+同时汇报进度，宿主也能稳定排序。保留的 `message.add`、`tool.call`、
+`tool.result` 默认只含元数据，不会再复制消息与工具 payload；完整的模型和
+工具细节可通过不保留的 observation 订阅获得。
+
+`RunUsage` 会累计 flow 内所有模型请求，包括流式响应，以及 provider 报告的
+缓存 prompt token。只有每次响应都带 usage 时，输入/输出 token 才报告精确
+总数；否则返回 `None`，避免给出误导性的部分合计。
 
 节点内部也可以写入当前 context：
 
@@ -246,6 +284,14 @@ if context:
 保持一个清晰边界：业务状态放在 `payload`，运行/会话数据放在 `RunContext`。例如 router decision、plan、artifact path 这类内容应该从 `result.payload` 获取；流式 delta、messages、UI events、artifact metadata 则放在 `result.context`。完整报告、PDF、长日志这类大产物应该放在文件、数据库或对象存储里，payload/context 只保留路径、ID、摘要或元数据。
 
 在多 agent flow 里，`RunContext` 会共享 events、artifacts 和 metadata，但每个 `Agent` 都有自己隔离的 message scope 作为 LLM 输入。这样前端/日志仍然能看到统一运行过程，但一个 agent 的 prompt/history 不会泄露到另一个 agent 的模型调用里。
+
+## 从 0.1 迁移
+
+- `CallableNode` 需要路由时请返回 `ExecResult(action, payload)`。0.2 会把普通
+  二元组当作业务 payload；旧代码可临时显式设置 `route_plain_tuples=True`。
+- `ToolCallNode` 默认只保留元数据事件。完整参数/结果请从 observation 通道
+  获取；确实需要持久保留时显式设置 `retain_event_payloads=True`。
+- 异步服务优先使用 `achat` / `arun`；同步 API 仍完整支持。
 
 ## 验证
 

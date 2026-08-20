@@ -13,6 +13,7 @@ from agent_core.tools import (
     ToolDefinitionError,
     ToolExecutor,
     get_current_tool_call,
+    report_tool_progress,
     tool,
 )
 
@@ -161,9 +162,7 @@ class ToolTests(unittest.TestCase):
             },
             fn=serial,
         )
-        executor = ToolExecutor(
-            [parallel("read", 0.03), serial_tool, parallel("grep", 0.2)]
-        )
+        executor = ToolExecutor([parallel("read", 0.03), serial_tool, parallel("grep", 0.2)])
         calls = executor.parse_tool_calls(
             {
                 "tool_calls": [
@@ -197,6 +196,7 @@ class ToolTests(unittest.TestCase):
                 ]
             ),
             next_action="chat",
+            retain_event_payloads=True,
         )
         payload = {
             "assistant_message": {
@@ -282,7 +282,32 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual(items["required"], ["old_text", "new_text"])
         self.assertEqual(items["properties"]["old_text"]["description"], "Exact text to replace.")
-        self.assertIn('\"call_id\": \"edit-1\"', result.content)
+        self.assertIn('"call_id": "edit-1"', result.content)
+
+    def test_tool_progress_falls_back_to_string_for_non_json_values(self) -> None:
+        class Progress:
+            def __str__(self) -> str:
+                return "working"
+
+        def run() -> str:
+            self.assertTrue(report_tool_progress(Progress()))
+            return "done"
+
+        progress_tool = Tool(
+            name="progress",
+            description="Reports progress.",
+            parameters={"type": "object", "properties": {}},
+            fn=run,
+        )
+        updates: list[tuple[str, str]] = []
+
+        result = ToolExecutor([progress_tool]).execute(
+            ToolCall("call-1", "progress", {}),
+            on_progress=lambda call, content: updates.append((call.id, content)),
+        )
+
+        self.assertFalse(result.is_error)
+        self.assertEqual(updates, [("call-1", "working")])
 
     def test_nested_annotated_items_keep_their_descriptions(self) -> None:
         @tool(description="Count items.")
@@ -434,6 +459,24 @@ class ToolTests(unittest.TestCase):
         self.assertTrue(result.is_error)
         self.assertIn("TypeError", result.content)
 
+    def test_executor_synthesizes_missing_and_duplicate_tool_call_ids(self) -> None:
+        assistant = {
+            "tool_calls": [
+                _openai_call("", "get_weather", "Shanghai"),
+                _openai_call("duplicate", "get_weather", "Tokyo"),
+                _openai_call("duplicate", "get_weather", "Paris"),
+            ]
+        }
+        executor = ToolExecutor([weather_tool()])
+
+        calls = executor.parse_tool_calls(assistant)
+
+        self.assertEqual([call.id for call in calls], ["call_0", "duplicate", "duplicate_2"])
+        self.assertEqual(
+            [item["id"] for item in assistant["tool_calls"]],
+            ["call_0", "duplicate", "duplicate_2"],
+        )
+
     def test_tool_call_node_appends_tool_messages(self) -> None:
         node = ToolCallNode(
             executor=ToolExecutor([weather_tool()]),
@@ -489,9 +532,7 @@ class ToolTests(unittest.TestCase):
 
         result = Flow(node).run(payload, trace=True, context=context)
         tool_events = [event for event in result.trace if event.category == "tool"]
-        runtime_tool_events = [
-            event for event in result.context.events if event.category == "tool"
-        ]
+        runtime_tool_events = [event for event in result.context.events if event.category == "tool"]
 
         self.assertEqual([event.type for event in tool_events], ["tool.call", "tool.result"])
         self.assertEqual(tool_events[0].data["name"], "get_weather")
@@ -505,9 +546,7 @@ class ToolTests(unittest.TestCase):
             [event.type for event in runtime_tool_events],
             ["tool.call", "tool.result"],
         )
-        call_payload = next(
-            event for event in observations if event.type == "tool.call.payload"
-        )
+        call_payload = next(event for event in observations if event.type == "tool.call.payload")
         result_payload = next(
             event for event in observations if event.type == "tool.result.payload"
         )

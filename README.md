@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/pypi/pyversions/friday-agent-core)](https://pypi.org/project/friday-agent-core/)
 
-Agent Core Runtime is a small Python runtime for building tool-using agents from a few explicit pieces: `Node`, `Flow`, `RunContext`, `Tool`, and `Agent`.
+Agent Core Runtime is a small, node-based Python runtime for building tool-using agents and workflows from a few explicit pieces: `Node`, `Flow`, `RunContext`, `Tool`, and `Agent`.
 
 [Chinese README](README.zh-CN.md) · [API Reference](docs/api.md) · [Design](docs/agent-core.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
@@ -18,6 +18,7 @@ The runtime is meant to be easy to read and easy to replace:
 - `Agent` is also a `Node`, so an agent can run alone or sit inside a larger flow.
 - `RunContext` carries scoped messages, one event stream, metadata, artifacts, and cumulative model usage for a caller-owned session.
 - `payload` carries explicit business data between nodes and is returned by the flow.
+- The same graph runs synchronously or asynchronously with `run` / `arun`; async models and tools stay native while synchronous nodes are moved off the event loop.
 - `@tool` turns typed Python functions into OpenAI-compatible tool schemas.
 - `LLM` is the default OpenAI-compatible model adapter. Configuration comes from constructor arguments or the process environment.
 
@@ -25,7 +26,7 @@ You can build a normal chat agent in one declaration, or wire your own flow when
 
 ## Scope and Boundary
 
-The runtime's story is deliberately small: it is the minimal unit that runs one agent, and the same pieces compose into sequential workflows and nested agent systems because `Agent` is a `Node`. It owns *execution* — flows, model and tool calls, and the caller-owned `RunContext`. Execution is synchronous; `parallel=True` tools only add bounded thread-pool concurrency within one tool batch.
+The runtime's story is deliberately small: it is the minimal unit that runs one agent, and the same pieces compose into sequential workflows and nested agent systems because `Agent` is a `Node`. It owns *execution* — flows, model and tool calls, and the caller-owned `RunContext`. Every graph has synchronous and asynchronous entry points. Under `arun`, native async nodes/models/tools are awaited directly and ordinary synchronous nodes run in worker threads; `parallel=True` still means bounded concurrency within one tool batch.
 
 Everything that makes a product an agent product lives above it, in a harness: prompt layering, session persistence, context compaction, memory, permissions, verification loops, and user surfaces. [Friday](https://github.com/Lancetwang/friday) is one such harness; its [architecture doc](https://github.com/Lancetwang/friday/blob/main/docs/architecture.md) describes this boundary from the consumer side.
 
@@ -58,7 +59,8 @@ flowchart TD
     ModelNode --> Router["ToolRouterNode"]
     Router -->|"tool_calls"| ToolNode["ToolCallNode"]
     ToolNode --> Tools["@tool functions"]
-    ToolNode --> ModelNode
+    ToolNode --> Guard["ToolLoopGuardNode"]
+    Guard -->|"continue / warn / halt"| ModelNode
     Router -->|"no tool_calls"| Answer["answer"]
 ```
 
@@ -68,7 +70,7 @@ flowchart TD
 src/agent_core/
   agent.py              # Agent: direct chat runner and embeddable Node
   core/                 # Node, Flow, RunContext, trace events
-  llm/                  # LLM, ChatModel protocol, ModelNode, router
+  llm/                  # model protocols, LLM, ModelNode, router, loop guard
   tools/                # @tool, ToolExecutor, ToolCallNode
 examples/
   01_basic_agent.py     # Node and Flow only
@@ -130,7 +132,7 @@ def build_model(api_key: str) -> LLM:
     )
 ```
 
-Core deliberately does not discover or parse `.env` files. A consuming application may still load one itself, use an OS keychain, read a database, or implement `ChatModel`; only the normalized model boundary matters to the runtime.
+Core deliberately does not discover or parse `.env` files. A consuming application may still load one itself, use an OS keychain, read a database, or implement `ChatModel` and/or `AsyncChatModel`; only the normalized model boundary matters to the runtime.
 
 ## Quick Agent
 
@@ -154,6 +156,25 @@ context = agent.new_context()
 answer = agent.chat("Draft a short evaluation plan.", context=context)
 print(answer)
 ```
+
+The same agent is async-native when your application already has an event loop:
+
+```python
+import asyncio
+
+async def main() -> None:
+    context = agent.new_context()
+    answer = await agent.achat("Draft a short evaluation plan.", context=context)
+    print(answer)
+
+asyncio.run(main())
+```
+
+Async `@tool` functions are awaited directly. Synchronous tools and custom
+nodes also work under `Agent.achat` / `Flow.arun` without blocking the event
+loop. Cancelling the surrounding task stops the async flow at the current
+await point; Python cannot forcibly stop a synchronous function that is
+already running in a worker thread.
 
 ## Custom Flow
 
@@ -193,6 +214,14 @@ team = Agent(Flow(researcher))
 
 When an `Agent` is used as a node, it exposes the final action from its inner flow. Pass `action="some_action"` only when you want to force a fixed outward action.
 
+The standard tool loop contains a regular `ToolLoopGuardNode`. After the same
+tool call keeps producing the same result, it first asks the model to change
+approach and then disables tools for one final text-only answer. Pass
+`loop_guard=False` to `Agent(...)` only when the surrounding workflow already
+implements its own no-progress policy. Custom flows can wire
+`ToolLoopGuardNode` through its `continue`, `warn`, and `halt` actions like any
+other node.
+
 ## Examples
 
 Run the examples in order:
@@ -231,9 +260,17 @@ Its `run_id`, messages, events, and cumulative usage then span those calls;
 
 Streaming OpenAI-compatible models emit `model.delta` for answer text and
 `model.reasoning.delta` for provider reasoning, allowing a harness to render
-the two channels independently.
+the two channels independently. Tools can call `report_tool_progress(value)`
+to publish live-only `tool.progress` events without adding runtime arguments
+to their schema.
 
-`RunUsage` accumulates every model request in the flow, including streamed responses. Input and output totals are exact when every provider response includes usage; otherwise the totals are reported as unknown instead of a misleading partial sum.
+Every delivered event has a monotonic per-context `seq`, so a host can order
+events even when parallel tools report progress. Retained `message.add`,
+`tool.call`, and `tool.result` events contain metadata rather than duplicating
+message/tool payloads; detailed model and tool data is available to the
+non-retained observation subscriber.
+
+`RunUsage` accumulates every model request in the flow, including streamed responses and cached prompt tokens when the provider reports them. Input and output totals are exact when every provider response includes usage; otherwise the totals are reported as unknown instead of a misleading partial sum.
 
 Nodes can also write to the active context:
 
@@ -248,6 +285,17 @@ if context:
 Keep business state in `payload` and runtime/session data in `RunContext`. For example, a router decision, plan, or artifact path belongs in `result.payload`; streamed model deltas, messages, UI events, and artifact metadata belong in `result.context`. Large artifacts such as full reports should live in files, databases, or object storage, with payload/context carrying references rather than the full content.
 
 In multi-agent flows, `RunContext` is shared for events, usage, artifacts, and metadata, but each `Agent` gets an isolated message scope for LLM input. This keeps the observable run unified without leaking one agent's prompt/history into another agent's model call.
+
+## Migrating from 0.1
+
+- Return `ExecResult(action, payload)` when a `CallableNode` should route.
+  Plain two-item tuples are business payloads in 0.2. Temporary legacy code
+  can opt into `route_plain_tuples=True`.
+- `ToolCallNode` now retains metadata-only tool events by default. Use the
+  observation channel for full arguments/results, or explicitly pass
+  `retain_event_payloads=True` when retained payloads are required.
+- Prefer `achat` / `arun` in async servers. The synchronous API remains fully
+  supported.
 
 ## Validate
 

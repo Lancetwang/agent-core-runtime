@@ -46,7 +46,10 @@ class CoreFlowTests(unittest.TestCase):
 
     def test_plain_tuple_routing_remains_available_for_0_1_compatibility(self) -> None:
         target = CallableNode(lambda payload: {**payload, "reached": True})
-        source = CallableNode(lambda payload: ("go", payload))
+        source = CallableNode(
+            lambda payload: ("go", payload),
+            route_plain_tuples=True,
+        )
         source - "go" >> target
 
         with self.assertWarns(DeprecationWarning):
@@ -55,9 +58,7 @@ class CoreFlowTests(unittest.TestCase):
         self.assertTrue(result.payload["reached"])
 
     def test_exec_result_routes_and_payload_passes_through(self) -> None:
-        result = Flow(
-            CallableNode(lambda payload: ExecResult("next", payload))
-        ).run({})
+        result = Flow(CallableNode(lambda payload: ExecResult("next", payload))).run({})
 
         self.assertEqual(result.action, "next")
         self.assertEqual(result.payload, {})
@@ -207,6 +208,63 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual([event.type for event in events], ["tool.progress"])
         self.assertEqual(context.events, [])
         self.assertEqual(observations, [])
+
+    def test_context_events_have_monotonic_sequence_across_channels(self) -> None:
+        live = []
+        observations = []
+        context = RunContext(on_event=live.append, on_observation=observations.append)
+
+        retained = context.emit("retained")
+        observed = context.observe("observed")
+        transient = context.notify("transient")
+
+        self.assertEqual([retained.seq, observed.seq, transient.seq], [1, 2, 3])
+        self.assertEqual([event.seq for event in context.events], [1])
+
+    def test_message_events_retain_metadata_not_message_content(self) -> None:
+        context = RunContext()
+
+        context.add_message(
+            "assistant",
+            "private answer",
+            tool_calls=[{"id": "secret-call"}],
+        )
+
+        event = context.events[-1]
+        self.assertEqual(event.type, "message.add")
+        self.assertEqual(event.data["role"], "assistant")
+        self.assertEqual(event.data["fields"], ["tool_calls"])
+        self.assertNotIn("content", event.data)
+        self.assertNotIn("tool_calls", event.data)
+
+    def test_usage_tracks_provider_cache_tokens_without_poisoning_known_values(self) -> None:
+        context = RunContext()
+        context.record_model_usage(
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 2,
+                "prompt_tokens_details": {"cached_tokens": 7},
+            }
+        )
+        context.record_model_usage(
+            {
+                "input_tokens": 5,
+                "output_tokens": 1,
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 2,
+            }
+        )
+
+        self.assertEqual(
+            context.usage.to_dict(),
+            {
+                "requests": 2,
+                "input_tokens": 15,
+                "output_tokens": 3,
+                "total_tokens": 18,
+                "cached_tokens": 12,
+            },
+        )
 
     def test_cancel_before_run_raises_flow_cancelled(self) -> None:
         cancel = threading.Event()

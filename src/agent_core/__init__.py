@@ -35,9 +35,11 @@ from agent_core.core import (
 )
 from agent_core.llm import (
     LLM,
+    AsyncChatModel,
     ChatModel,
     Message,
     ModelNode,
+    ToolLoopGuardNode,
     ToolRouterNode,
 )
 from agent_core.tools import (
@@ -48,6 +50,7 @@ from agent_core.tools import (
     ToolExecutor,
     ToolResult,
     get_current_tool_call,
+    report_tool_progress,
     tool,
 )
 
@@ -55,6 +58,7 @@ __all__ = [
     "Action",
     "Agent",
     "AgentEvent",
+    "AsyncChatModel",
     "CallableNode",
     "ChatModel",
     "ExecResult",
@@ -74,6 +78,7 @@ __all__ = [
     "ToolCallNode",
     "ToolDefinitionError",
     "ToolExecutor",
+    "ToolLoopGuardNode",
     "ToolRouterNode",
     "ToolResult",
     "TraceEvent",
@@ -85,5 +90,6 @@ __all__ = [
     "make_trace_options",
     "reset_current_context",
     "set_current_context",
+    "report_tool_progress",
     "tool",
 ]

@@ -196,5 +196,5 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
     raise ToolDefinitionError(
         f"unsupported tool annotation: {annotation!r}. "
         "Supported: str, int, float, bool, dict, list, TypedDict, Literal[...], unions of these, "
-        "and Annotated[T, \"description\"]."
+        'and Annotated[T, "description"].'
     )

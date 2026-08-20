@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 import uuid
 from collections.abc import Mapping, Sequence
@@ -17,7 +18,7 @@ from agent_core.core import (
     TraceOptions,
     get_current_context,
 )
-from agent_core.llm import ChatModel
+from agent_core.llm import AsyncChatModel, ChatModel
 from agent_core.llm.nodes import _minimal_agent_loop
 from agent_core.tools import Tool
 
@@ -44,11 +45,12 @@ class Agent(Node):
         self,
         flow: Flow | None = None,
         *,
-        model: ChatModel | None = None,
+        model: ChatModel | AsyncChatModel | None = None,
         instructions: str | None = None,
         tools: Sequence[Tool] | None = None,
         chat_kwargs: Mapping[str, Any] | None = None,
         stream: bool = True,
+        loop_guard: bool = True,
         action: Action | object = _INHERIT_ACTION,
         max_steps: int = 100,
         max_retries: int = 1,
@@ -60,6 +62,7 @@ class Agent(Node):
                 model=model,
                 tools=list(tools or []),
                 chat_kwargs={"stream": stream, **dict(chat_kwargs or {})},
+                loop_guard=loop_guard,
             )
         elif model is not None:
             raise ValueError(
@@ -139,6 +142,51 @@ class Agent(Node):
             )
         return str(result.payload[PayloadKeys.ANSWER])
 
+    async def achat(
+        self,
+        text: str,
+        *,
+        content: Any | None = None,
+        context: RunContext | None = None,
+        max_steps: int | None = None,
+        trace: TraceOptions | bool | None = None,
+        stream: bool | None = None,
+        on_delta: Any = None,
+        payload: Mapping[str, Any] | None = None,
+        cancel: threading.Event | asyncio.Event | None = None,
+    ) -> str:
+        """Async counterpart of :meth:`chat` for async models and tools."""
+        run_context = self._prepare_context(context)
+        if run_context is None:
+            run_context = RunContext()
+        run_context.add_message(
+            "user",
+            text if content is None else content,
+            scope=self._message_scope,
+        )
+        state = {PayloadKeys.INPUT: text, **dict(payload or {})}
+        chat_kwargs = dict(state.get(PayloadKeys.CHAT_KWARGS, {}) or {})
+        if stream is not None:
+            chat_kwargs["stream"] = stream
+        if on_delta is not None:
+            chat_kwargs["on_delta"] = on_delta
+        if chat_kwargs:
+            state[PayloadKeys.CHAT_KWARGS] = chat_kwargs
+        result = await self.arun(
+            state,
+            max_steps=max_steps,
+            trace=trace,
+            context=run_context,
+            cancel=cancel,
+        )
+        if not isinstance(result.payload, Mapping) or PayloadKeys.ANSWER not in result.payload:
+            raise FlowError(
+                f"Agent.achat expected the flow payload to contain "
+                f"{PayloadKeys.ANSWER!r}. Custom chat flows must set that key; "
+                "use Agent.arun() when the result has a different shape."
+            )
+        return str(result.payload[PayloadKeys.ANSWER])
+
     def run(
         self,
         payload: Any = None,
@@ -170,6 +218,31 @@ class Agent(Node):
                 cancel=cancel,
             )
 
+    async def arun(
+        self,
+        payload: Any = None,
+        *,
+        max_steps: int | None = None,
+        trace: TraceOptions | bool | None = None,
+        context: RunContext | None = None,
+        cancel: threading.Event | asyncio.Event | None = None,
+    ) -> FlowRunResult:
+        """Asynchronously run the inner node flow."""
+        if max_steps is None:
+            max_steps = self.max_steps
+        context = self._prepare_context(context)
+        if context is None:
+            context = RunContext()
+        with context.use_message_scope(self._message_scope):
+            self._adopt_global_messages(context)
+            return await self.flow.arun(
+                payload,
+                max_steps=max_steps,
+                trace=trace,
+                context=context,
+                cancel=cancel,
+            )
+
     def exec(self, payload: Any) -> ExecResult:
         """Run as a node inside an outer flow, exposing the inner flow's final action."""
         context = self._prepare_context(get_current_context())
@@ -178,6 +251,26 @@ class Agent(Node):
         with context.use_message_scope(self._message_scope):
             self._adopt_global_messages(context)
             result = self.flow.run(
+                payload,
+                max_steps=self.max_steps,
+                trace=None,
+                context=context,
+            )
+        action = (
+            result.action or "default"
+            if self.action is _INHERIT_ACTION
+            else cast(Action, self.action)
+        )
+        return ExecResult(action, result.payload)
+
+    async def aexec(self, payload: Any) -> ExecResult:
+        """Run this agent as an async node inside an outer async flow."""
+        context = self._prepare_context(get_current_context())
+        if context is None:
+            context = RunContext()
+        with context.use_message_scope(self._message_scope):
+            self._adopt_global_messages(context)
+            result = await self.flow.arun(
                 payload,
                 max_steps=self.max_steps,
                 trace=None,

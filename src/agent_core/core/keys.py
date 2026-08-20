@@ -28,3 +28,9 @@ class PayloadKeys:
 
     TOOL_RESULTS = "tool_results"
     """``ToolResult`` list stored by ``ToolCallNode``."""
+
+    TOOLS_ENABLED = "tools_enabled"
+    """Whether the built-in model/tool loop may advertise or execute tools."""
+
+    LOOP_GUARD = "loop_guard"
+    """Internal no-progress history carried by ``ToolLoopGuardNode``."""

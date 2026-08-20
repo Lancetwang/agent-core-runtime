@@ -31,9 +31,7 @@ class WorkerContextTests(unittest.TestCase):
             return f"{value}:{call.id if call else 'none'}"
 
         executor = ToolExecutor([echo_id], max_workers=4)
-        assistant = {
-            "tool_calls": [_openai_call(f"call_{i}", "echo_id", str(i)) for i in range(3)]
-        }
+        assistant = {"tool_calls": [_openai_call(f"call_{i}", "echo_id", str(i)) for i in range(3)]}
 
         results = executor.execute_all(executor.parse_tool_calls(assistant))
 
@@ -75,7 +73,13 @@ class MultiAgentTeamTests(unittest.TestCase):
         self.assertEqual(result.payload.get("answer"), "final text")
         self.assertEqual(
             result.usage.to_dict(),
-            {"requests": 2, "input_tokens": 13, "output_tokens": 5, "total_tokens": 18},
+            {
+                "requests": 2,
+                "input_tokens": 13,
+                "output_tokens": 5,
+                "total_tokens": 18,
+                "cached_tokens": None,
+            },
         )
         self.assertEqual(context.usage.to_dict()["total_tokens"], 18)
         self.assertEqual(len(context.message_scopes), 2)
@@ -124,7 +128,13 @@ class ChatTurnTests(unittest.TestCase):
 
         self.assertEqual(
             context.usage.to_dict(),
-            {"requests": 2, "input_tokens": 9, "output_tokens": 3, "total_tokens": 12},
+            {
+                "requests": 2,
+                "input_tokens": 9,
+                "output_tokens": 3,
+                "total_tokens": 12,
+                "cached_tokens": None,
+            },
         )
         self.assertEqual(
             [message["content"] for message in model.requests[1]],

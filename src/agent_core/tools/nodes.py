@@ -1,8 +1,9 @@
+from collections.abc import Callable
 from typing import Any
 
 from agent_core.core import ExecResult, Node, PayloadKeys
 from agent_core.core.context import get_current_context
-from agent_core.tools.executor import ToolExecutor
+from agent_core.tools.executor import ToolCall, ToolExecutor, ToolResult
 
 
 class ToolCallNode(Node):
@@ -12,9 +13,10 @@ class ToolCallNode(Node):
     call through the executor, stores results under ``state[results_key]``,
     appends ``role: tool`` messages to the active context scope (the
     canonical history; or to ``state[messages_key]`` when no context is
-    active), and emits ``tool.call`` / ``tool.result`` events. Set
-    ``retain_event_payloads=False`` to retain metadata only and send full
-    arguments/results through the observation channel instead.
+    active), and emits ``tool.call`` / ``tool.result`` events. By default it
+    retains metadata only and sends full arguments/results through the
+    observation channel; ``retain_event_payloads=True`` is the explicit
+    compatibility opt-in for retaining full event payloads.
     """
 
     def __init__(
@@ -25,7 +27,7 @@ class ToolCallNode(Node):
         messages_key: str = PayloadKeys.HISTORY,
         results_key: str = PayloadKeys.TOOL_RESULTS,
         next_action: str = "chat",
-        retain_event_payloads: bool = True,
+        retain_event_payloads: bool = False,
     ) -> None:
         super().__init__()
         self.executor = executor if executor is not None else ToolExecutor()
@@ -36,15 +38,35 @@ class ToolCallNode(Node):
         self.retain_event_payloads = retain_event_payloads
 
     def exec(self, payload: Any) -> ExecResult:
+        state, tool_calls, context = self._prepare(payload)
+        self._emit_calls(context, tool_calls)
+        results = self.executor.execute_all(
+            tool_calls,
+            on_progress=self._progress_callback(context),
+        )
+        return self._complete(state, context, tool_calls, results)
+
+    async def aexec(self, payload: Any) -> ExecResult:
+        state, tool_calls, context = self._prepare(payload)
+        self._emit_calls(context, tool_calls)
+        results = await self.executor.aexecute_all(
+            tool_calls,
+            on_progress=self._progress_callback(context),
+        )
+        return self._complete(state, context, tool_calls, results)
+
+    def _prepare(self, payload: Any) -> tuple[dict[str, Any], list[ToolCall], Any]:
         state: dict[str, Any] = dict(payload or {})
         assistant_message = state.get(self.assistant_key, {})
         tool_calls = self.executor.parse_tool_calls(assistant_message)
         context = get_current_context()
+        return state, tool_calls, context
+
+    def _emit_calls(self, context: Any, tool_calls: list[ToolCall]) -> None:
         # Announce every call first so hosts see the batch the model asked
         # for; results are then emitted in the same order, whether the calls
-        # ran concurrently or one after another. The compatibility default
-        # retains full payloads; the built-in Agent loop opts into metadata-
-        # only tool events to avoid duplicating large or sensitive content.
+        # ran concurrently or one after another. Metadata-only retention is
+        # the safe default; full payload events remain an explicit opt-in.
         # The canonical message history still retains data required for the
         # next model request.
         for tool_call in tool_calls:
@@ -70,7 +92,14 @@ class ToolCallNode(Node):
                         category="tool",
                         data=full_data,
                     )
-        results = self.executor.execute_all(tool_calls)
+
+    def _complete(
+        self,
+        state: dict[str, Any],
+        context: Any,
+        tool_calls: list[ToolCall],
+        results: list[ToolResult],
+    ) -> ExecResult:
         names = {call.id: call.name for call in tool_calls}
         for result in results:
             if context is not None:
@@ -116,3 +145,23 @@ class ToolCallNode(Node):
             state[self.messages_key] = messages
 
         return ExecResult(self.next_action, state)
+
+    @staticmethod
+    def _progress_callback(
+        context: Any,
+    ) -> Callable[[ToolCall, str], None] | None:
+        if context is None:
+            return None
+
+        def on_progress(tool_call: ToolCall, content: str) -> None:
+            context.notify(
+                "tool.progress",
+                category="tool",
+                data={
+                    "tool_call_id": tool_call.id,
+                    "name": tool_call.name,
+                    "content": content,
+                },
+            )
+
+        return on_progress

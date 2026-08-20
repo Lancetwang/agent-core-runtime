@@ -191,9 +191,7 @@ class AgentCorePackageTests(unittest.TestCase):
 
         result = Flow(first).run({})
         system_messages = [
-            message["content"]
-            for message in result.context.messages
-            if message["role"] == "system"
+            message["content"] for message in result.context.messages if message["role"] == "system"
         ]
 
         self.assertEqual(result.payload["seen"], ["first", "second"])
