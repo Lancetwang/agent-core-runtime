@@ -35,11 +35,24 @@ class CoreFlowTests(unittest.TestCase):
 
     def test_plain_tuple_return_stays_payload(self) -> None:
         result = Flow(
-            CallableNode(lambda payload: ("user_id", "123"))
+            CallableNode(
+                lambda payload: ("user_id", "123"),
+                route_plain_tuples=False,
+            )
         ).run({})
 
         self.assertEqual(result.action, "default")
         self.assertEqual(result.payload, ("user_id", "123"))
+
+    def test_plain_tuple_routing_remains_available_for_0_1_compatibility(self) -> None:
+        target = CallableNode(lambda payload: {**payload, "reached": True})
+        source = CallableNode(lambda payload: ("go", payload))
+        source - "go" >> target
+
+        with self.assertWarns(DeprecationWarning):
+            result = Flow(source).run({})
+
+        self.assertTrue(result.payload["reached"])
 
     def test_exec_result_routes_and_payload_passes_through(self) -> None:
         result = Flow(

@@ -11,10 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Run tests
+      - name: Run checks
         run: |
           uv sync
-          uv run python -m unittest discover -s tests
+          uv run ruff check src tests examples
+          uv run pyright
+          uv run coverage run -m unittest discover -s tests
+          uv run coverage report
+          uv run python -m compileall src tests examples
       - name: Build sdist and wheel
         run: uv build
       - uses: actions/upload-artifact@v4

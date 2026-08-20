@@ -120,6 +120,17 @@ class WiringValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "must be a Node"):
             router.add_edge("go", "not a node")  # type: ignore[arg-type]
 
+    def test_add_edge_normalizes_empty_action(self) -> None:
+        router = CallableNode(lambda payload: ExecResult("", payload))
+        target = CallableNode(lambda payload: {**payload, "hit": True})
+
+        router.add_edge("", target)
+        result = Flow(router).run({})
+
+        self.assertNotIn("", router.successors)
+        self.assertIs(router.successors["default"], target)
+        self.assertTrue(result.payload["hit"])
+
     def test_action_selection_does_not_mutate_the_node(self) -> None:
         node = CallableNode(lambda payload: payload)
 

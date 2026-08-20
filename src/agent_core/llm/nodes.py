@@ -112,29 +112,38 @@ class ModelNode(Node):
                     "usage": message.get("usage", {}),
                 },
             )
-        return self.action, state
+        return ExecResult(self.action, state)
 
     def _messages(self, state: dict[str, Any]) -> list[Message]:
-        if self.messages:
-            return list(self.messages(state))
         context = get_current_context()
-        if context:
+        if context is not None:
             scoped_messages = context.get_messages()
-            if scoped_messages:
-                return list(scoped_messages)
-            for message in state.get(self.messages_key, []):
-                if not isinstance(message, Mapping) or not isinstance(message.get("role"), str):
-                    continue
-                context.add_message(
-                    message["role"],
-                    message.get("content", ""),
-                    **{
-                        key: value
-                        for key, value in message.items()
-                        if key not in {"role", "content"}
-                    },
-                )
-            return list(context.get_messages())
+            if not scoped_messages:
+                for message in state.get(self.messages_key, []):
+                    if not isinstance(message, Mapping) or not isinstance(
+                        message.get("role"), str
+                    ):
+                        continue
+                    context.add_message(
+                        message["role"],
+                        message.get("content", ""),
+                        **{
+                            key: value
+                            for key, value in message.items()
+                            if key not in {"role", "content"}
+                        },
+                    )
+                scoped_messages = context.get_messages()
+            if self.messages is not None:
+                # A custom builder remains in control of the final prompt, but
+                # receives the canonical context history under messages_key.
+                # This keeps assistant/tool turns visible on later loop passes
+                # without restoring a second mutable history store.
+                builder_state = {**state, self.messages_key: list(scoped_messages)}
+                return list(self.messages(builder_state))
+            return list(scoped_messages)
+        if self.messages is not None:
+            return list(self.messages(state))
         return list(state.get(self.messages_key, []))
 
     def _tools(self, state: dict[str, Any]) -> list[Mapping[str, Any]]:
@@ -204,7 +213,7 @@ class ToolRouterNode(Node):
                 action=action,
                 data={"tool_call_count": len(tool_calls or [])},
             )
-        return action, state
+        return ExecResult(action, state)
 
 
 def _minimal_agent_loop(
@@ -239,6 +248,7 @@ def _minimal_agent_loop(
         assistant_key=assistant_key,
         messages_key=messages_key,
         next_action="chat",
+        retain_event_payloads=False,
     )
 
     model_node - "observe" >> router_node

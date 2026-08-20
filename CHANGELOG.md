@@ -15,44 +15,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   Nested runs inherit the enclosing run's cancel event.
 - `python -m agent_core chat` starts an interactive chat REPL built from
   `Agent` + `LLM` (`--instructions`, `--max-steps`, `--no-stream`).
-- CI now lints with ruff (config committed in `pyproject.toml`) and runs the
-  test matrix on Windows as well as Ubuntu.
+- CI now lints with ruff, type-checks the public source with Pyright, enforces
+  an 85% coverage floor, and runs the matrix on Windows as well as Ubuntu.
 
 ### Changed
 
-- `CallableNode` no longer guesses routing from tuple shape: a function must
-  return an explicit `ExecResult(action, payload)` to route. Plain
-  `(str, value)` tuples are now treated as business payload instead of being
-  silently reinterpreted as `(action, payload)`.
+- `CallableNode` now supports explicit `ExecResult(action, payload)` routing
+  and a `route_plain_tuples=False` mode for tuple-shaped business payloads.
+  Plain tuple routing remains enabled with a `DeprecationWarning` for 0.1.x
+  compatibility.
 - `Agent.run` / `Agent.chat` now default their `max_steps` to the
   constructor budget instead of an independent hard-coded 100.
-- Nested flows share one step budget: an `Agent` used as a node cannot burn
-  more steps than the enclosing run has left.
+- Nested flows share one step counter: every inner node visit is debited from
+  the enclosing run budget while each flow keeps its own local cap.
 - The conversation history now has one canonical store: during a flow run,
   assistant and tool messages are written to the active context scope only.
   `state["history"]` no longer accumulates during runs; it remains an import
-  seed for custom flows. Reasoning content follows the same retention rule
-  in both stores (kept only for tool-call turns).
+  seed for custom flows. Custom message builders receive the canonical scope
+  under their configured history key, so tool-loop history is not lost.
+  Reasoning content is kept only for tool-call turns.
 - An `Agent` adopts unscoped ambient messages into its scope at run start,
   so a conversation seeded through unscoped `context.add_message` calls is
   visible to the model while other agents' scoped messages stay isolated.
-- The retained event stream now follows a retention policy: `model.delta` /
-  `model.reasoning.delta` are live-only (`notify`, no longer retained),
-  `tool.call` / `tool.result` retain small metadata only, and full tool
-  arguments/results travel through observe-only `tool.call.payload` /
-  `tool.result.payload` events. Trace collection captures live events of a
-  run regardless of retention.
+- `model.delta` / `model.reasoning.delta` are live-only (`notify`, no longer
+  retained). The built-in Agent loop also retains metadata-only tool events
+  and sends full payloads through observe-only events, avoiding another copy
+  in `tool.call` / `tool.result` records. Directly constructed
+  `ToolCallNode`s retain the 0.1.x full event data by default for compatibility
+  and can opt into metadata-only retention with `retain_event_payloads=False`.
+  Trace collection captures live events regardless of retention.
 - Default trace categories dropped the never-emitted `llm` and `plan`
   entries and are now `{"flow", "node", "tool", "model"}`.
 
 ### Fixed
 
-- Tool schema generation now unwraps `Annotated` inside containers
-  (`list[Annotated[T, "desc"]]`, tuple items, TypedDict fields), so nested
-  item descriptions no longer raise `ToolDefinitionError`.
+- Tool schema generation now unwraps `Annotated` recursively inside
+  containers, unions, and TypedDict fields, so nested item descriptions no
+  longer raise `ToolDefinitionError`.
 - Flows wired in the examples/04 style (system and user messages added to a
   plain `RunContext` without a scope) no longer send an empty message list to
   the model on the first request.
+- `Agent.chat` now reports a missing `answer` key in custom flow output instead
+  of silently returning an empty string.
 
 ## [0.1.10] - 2026-08-08
 

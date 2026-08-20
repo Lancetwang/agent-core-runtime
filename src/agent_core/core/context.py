@@ -76,11 +76,12 @@ class RunUsage:
         exact = self.requests == self.usage_requests
         input_tokens = self.input_tokens if exact else None
         output_tokens = self.output_tokens if exact else None
+        total_tokens = self.input_tokens + self.output_tokens if exact else None
         return {
             "requests": self.requests,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens if exact else None,
+            "total_tokens": total_tokens,
         }
 
 
@@ -183,7 +184,11 @@ class RunContext:
         action: str | None = None,
         data: Mapping[str, Any] | None = None,
     ) -> AgentEvent | None:
-        """Notify the live host without retaining the event or writing it to trace."""
+        """Notify the live host without retaining the event.
+
+        An explicitly enabled ``Flow`` trace may still capture the live event
+        in that run's ``FlowRunResult.trace``.
+        """
         if self.on_event is None:
             return None
         event = AgentEvent(

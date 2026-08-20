@@ -19,12 +19,16 @@ suite uses fakes and needs no API key.
 ## Running checks
 
 ```powershell
-uv run python -m unittest discover -s tests
+uv run ruff check src tests examples
+uv run pyright
+uv run coverage run -m unittest discover -s tests
+uv run coverage report
 uv run python -m compileall src tests examples
+uv build
 ```
 
-Both must pass before a change is merged. CI runs the same commands on every
-push and pull request.
+All checks must pass before a change is merged. CI runs the same commands on
+every push and pull request.
 
 ## Design ground rules
 

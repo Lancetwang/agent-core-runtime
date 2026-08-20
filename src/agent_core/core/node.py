@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -26,8 +27,9 @@ class ExecResult(tuple):
 
     Subclasses ``tuple``, so existing destructuring (``action, payload =
     node.exec(...)``) keeps working, but instances are distinguishable from
-    plain data tuples. ``CallableNode`` treats a returned :class:`ExecResult`
-    as routing; an ordinary ``(str, value)`` tuple stays business payload.
+    plain data tuples. ``CallableNode`` always treats an :class:`ExecResult`
+    as routing; tuple-shape inference remains available as a 0.1.x
+    compatibility mode.
     """
 
     __slots__ = ()
@@ -72,13 +74,13 @@ class Node:
         self.max_retries = max_retries
         self.wait = wait
 
-    def exec(self, payload: Any) -> ExecResult:
+    def exec(self, payload: Any) -> tuple[Action, Any]:
         """Do this node's work and return ``(action, payload)``."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement exec(payload) and return (action, payload)."
         )
 
-    def _exec(self, payload: Any) -> ExecResult:
+    def _exec(self, payload: Any) -> tuple[Action, Any]:
         for attempt in range(self.max_retries):
             try:
                 return self.exec(payload)
@@ -99,6 +101,9 @@ class Node:
         wiring. Each action selects exactly one successor; wiring the same
         action to a different node raises ``ValueError``.
         """
+        if not isinstance(action, str):
+            raise TypeError(f"action must be a string, got {type(action).__name__}.")
+        action = action or "default"
         if not isinstance(successor, Node):
             raise TypeError(
                 f"The right side of >> must be a Node, got {type(successor).__name__}. "
@@ -147,15 +152,17 @@ class CallableNode(Node):
     """Adapt a plain function into a node.
 
     The function receives the payload. If it returns ``ExecResult(action,
-    payload)`` that pair is used as-is; any other return value — including a
-    plain ``(str, value)`` tuple — is treated as business payload and wrapped
-    as ``("default", value)``.
+    payload)`` that pair is used as-is. For 0.1.x compatibility, a plain
+    ``(str, value)`` tuple is also routed by default; pass
+    ``route_plain_tuples=False`` when tuples are business payloads. Any other
+    return value is wrapped as ``("default", value)``.
     """
 
     def __init__(
         self,
         fn: Callable[[Any], ExecResult | Any],
         *,
+        route_plain_tuples: bool = True,
         max_retries: int = 1,
         wait: float = 0,
     ) -> None:
@@ -163,12 +170,28 @@ class CallableNode(Node):
         if not callable(fn):
             raise TypeError(f"CallableNode requires a callable, got {type(fn).__name__}.")
         self.fn = fn
+        self.route_plain_tuples = route_plain_tuples
 
     def exec(self, payload: Any) -> ExecResult:
         result = self.fn(payload)
         if isinstance(result, ExecResult):
             return result
+        # Keep the 0.1.x CallableNode contract available while callers migrate
+        # routing functions to explicit ExecResult values. Tuple-shaped
+        # business data can opt out immediately with route_plain_tuples=False.
+        if self.route_plain_tuples and self._is_legacy_exec_result(result):
+            warnings.warn(
+                "Returning a plain (action, payload) tuple from CallableNode is "
+                "deprecated; return ExecResult(action, payload) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return ExecResult(result[0], result[1])
         return ExecResult("default", result)
+
+    @staticmethod
+    def _is_legacy_exec_result(value: Any) -> bool:
+        return isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str)
 
 
 @dataclass(frozen=True)
@@ -186,7 +209,7 @@ class FlowRunResult:
     payload: Any
     path: list[str]
     trace: list[TraceEvent] = field(default_factory=list)
-    context: RunContext | None = None
+    context: RunContext = field(default_factory=RunContext)
     usage: RunUsage = field(default_factory=RunUsage)
 
 
@@ -233,13 +256,13 @@ class Flow:
             run_context.on_event = on_event
         context_token = set_current_context(run_context)
 
-        # Nested flows share one step budget: an inner flow (for example an
-        # Agent used as a node) may not burn more steps than the outer run
-        # has left. The remaining budget travels in a ContextVar so nesting
-        # composes without threading parameters through Node.exec.
-        outer_budget = _STEP_BUDGET.get()
-        budget = max_steps if outer_budget is None else min(max_steps, outer_budget)
-        budget_token = _STEP_BUDGET.set(budget)
+        # Every visited node, including nodes inside nested Agent flows,
+        # consumes from one shared run budget. Each nested Flow still keeps
+        # its own max_steps cap as a local guard.
+        shared_budget = _STEP_BUDGET.get()
+        if shared_budget is None:
+            shared_budget = _StepBudget(max_steps)
+        budget_token = _STEP_BUDGET.set(shared_budget)
 
         # Cooperative cancellation: an explicit event wins; otherwise nested
         # runs inherit the enclosing run's event through the ContextVar.
@@ -247,7 +270,9 @@ class Flow:
         cancel_token = _FLOW_CANCEL.set(cancel_event)
 
         try:
-            for step in range(1, budget + 1):
+            for step in range(1, max_steps + 1):
+                node_name = current.__class__.__name__
+                run_context.set_execution_context(step=step, node=node_name)
                 if cancel_event is not None and cancel_event.is_set():
                     run_context.emit(
                         "flow.cancel",
@@ -256,22 +281,37 @@ class Flow:
                         data={"step": step},
                     )
                     raise FlowCancelled(f"Flow cancelled at step {step}.")
-                _STEP_BUDGET.set(budget - step)
-                node_name = current.__class__.__name__
+                if not shared_budget.consume():
+                    error = FlowError(
+                        f"Flow exhausted shared max_steps={shared_budget.limit}. "
+                        "Nested flow steps count toward the enclosing run budget."
+                    )
+                    run_context.emit(
+                        "flow.error",
+                        category="flow",
+                        data={"error_type": type(error).__name__, "message": str(error)},
+                    )
+                    raise error
                 path.append(node_name)
-                run_context.set_execution_context(step=step, node=node_name)
                 run_context.emit("node.start", category="node")
                 try:
                     last_action, payload = current._exec(payload)
+                    if not isinstance(last_action, str):
+                        raise TypeError(
+                            f"{node_name}.exec(payload) returned a non-string action: "
+                            f"{last_action!r}."
+                        )
+                    if last_action == "":
+                        last_action = "default"
                 except Exception as exc:
                     error = {"error_type": type(exc).__name__, "message": str(exc)}
+                    run_context.set_execution_context(step=step, node=node_name)
                     run_context.emit("node.error", category="node", data=error)
                     run_context.emit("flow.error", category="flow", data=error)
                     raise
                 # Align with the wiring DSL, which normalizes empty action
                 # names to "default": a node returning "" routes to the
                 # "default" successor instead of silently ending the flow.
-                last_action = last_action or "default"
                 next_node = current.successors.get(last_action)
                 run_context.set_execution_context(step=step, node=node_name)
                 run_context.emit(
@@ -297,13 +337,8 @@ class Flow:
                     )
                 current = next_node
 
-            nested_note = (
-                " The remaining budget was reduced by an enclosing flow run."
-                if outer_budget is not None
-                else ""
-            )
             error = FlowError(
-                f"Flow exceeded max_steps={budget}.{nested_note} "
+                f"Flow exceeded max_steps={max_steps}. "
                 "Raise max_steps for long runs, or check the graph for "
                 "an action cycle that never ends."
             )
@@ -321,7 +356,23 @@ class Flow:
             reset_current_context(context_token)
 
 
-_STEP_BUDGET: ContextVar[int | None] = ContextVar(
+class _StepBudget:
+    """Thread-safe counter shared by nested flow runs in one context."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.remaining = limit
+        self._lock = threading.Lock()
+
+    def consume(self) -> bool:
+        with self._lock:
+            if self.remaining <= 0:
+                return False
+            self.remaining -= 1
+            return True
+
+
+_STEP_BUDGET: ContextVar[_StepBudget | None] = ContextVar(
     "agent_core_step_budget",
     default=None,
 )

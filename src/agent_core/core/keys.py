@@ -1,8 +1,8 @@
 """Canonical payload state key names shared by the built-in nodes.
 
 Custom flows read and write the flow payload through these keys. Centralizing
-them removes typo-driven silent failures: a misspelled ``answer`` key, for
-example, silently yields an empty chat response instead of an error.
+the built-in names reduces repeated magic strings, but arbitrary custom
+payload mappings remain dynamically typed.
 """
 
 from __future__ import annotations

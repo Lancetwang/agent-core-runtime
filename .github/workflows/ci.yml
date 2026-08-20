@@ -19,8 +19,12 @@ jobs:
         run: uv sync
       - name: Lint
         run: uv run ruff check src tests examples
-      - name: Run tests
-        run: uv run python -m unittest discover -s tests
+      - name: Type check
+        run: uv run pyright
+      - name: Run tests with coverage
+        run: uv run coverage run -m unittest discover -s tests
+      - name: Check coverage
+        run: uv run coverage report
       - name: Compile all sources
         run: uv run python -m compileall src tests examples
       - name: Build distributions

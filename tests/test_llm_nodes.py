@@ -130,6 +130,45 @@ class LlmNodeTests(unittest.TestCase):
         )
         self.assertEqual(model.requests[1]["messages"][0]["content"], "weather?")
 
+    def test_custom_message_builder_receives_canonical_tool_loop_history(self) -> None:
+        model = FakeChatModel(
+            [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city": "Shanghai"}',
+                            },
+                        }
+                    ],
+                },
+                {"role": "assistant", "content": "sunny"},
+            ]
+        )
+        model_node = ModelNode(
+            model=model,
+            messages=build_messages,
+            tools=[get_weather],
+            action="observe",
+        )
+        router_node = ToolRouterNode(tool_action="tool_call", done_action="final")
+        tool_node = ToolCallNode(executor=ToolExecutor([get_weather]), next_action="chat")
+        model_node - "observe" >> router_node
+        router_node - "tool_call" >> tool_node
+        tool_node - "chat" >> model_node
+
+        Flow(model_node).run({"history": [{"role": "user", "content": "weather?"}]})
+
+        self.assertEqual(
+            [message["role"] for message in model.requests[1]["messages"]],
+            ["system", "user", "assistant", "tool"],
+        )
+
     def test_model_node_observes_full_payload_without_retaining_it(self) -> None:
         model = FakeChatModel([{"role": "assistant", "content": "hello"}])
         node = ModelNode(
@@ -345,6 +384,14 @@ class LlmNodeTests(unittest.TestCase):
             [event.type for event in result.context.events if event.category == "tool"],
             ["tool.observe", "tool.call", "tool.result", "tool.observe"],
         )
+        tool_call_event = next(
+            event for event in result.context.events if event.type == "tool.call"
+        )
+        tool_result_event = next(
+            event for event in result.context.events if event.type == "tool.result"
+        )
+        self.assertNotIn("arguments", tool_call_event.data)
+        self.assertNotIn("content", tool_result_event.data)
         self.assertEqual(result.usage.to_dict()["total_tokens"], 16)
 
 

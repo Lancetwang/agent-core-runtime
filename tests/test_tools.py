@@ -221,6 +221,9 @@ class ToolTests(unittest.TestCase):
         )
         self.assertIsNotNone(tool_events[2].data.get("elapsed_ms"))
         self.assertEqual(tool_events[2].data["is_error"], False)
+        self.assertEqual(tool_events[0].data["arguments"], {"value": "r"})
+        self.assertIn("r", tool_events[2].data["content"])
+
     def test_tool_executes_function(self) -> None:
         tool = weather_tool()
 
@@ -303,6 +306,21 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(
             items["properties"]["score"],
             {"type": "integer", "description": "Entry score."},
+        )
+
+    def test_nested_annotated_inside_union_items(self) -> None:
+        @tool(description="Describe mixed items.")
+        def describe(items: list[int | Annotated[str, "Text item."]]) -> str:
+            return str(items)
+
+        schemas = describe.parameters["properties"]["items"]["items"]["anyOf"]
+
+        self.assertEqual(
+            schemas,
+            [
+                {"type": "integer"},
+                {"type": "string", "description": "Text item."},
+            ],
         )
 
     def test_executor_cancel_between_serial_calls(self) -> None:
@@ -417,7 +435,10 @@ class ToolTests(unittest.TestCase):
         self.assertIn("TypeError", result.content)
 
     def test_tool_call_node_appends_tool_messages(self) -> None:
-        node = ToolCallNode(executor=ToolExecutor([weather_tool()]), next_action="chat")
+        node = ToolCallNode(
+            executor=ToolExecutor([weather_tool()]),
+            next_action="chat",
+        )
         payload = {
             "assistant_message": {
                 "tool_calls": [
@@ -442,7 +463,11 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(state["history"][0]["tool_call_id"], "call_1")
 
     def test_tool_call_node_emits_trace_events(self) -> None:
-        node = ToolCallNode(executor=ToolExecutor([weather_tool()]), next_action="chat")
+        node = ToolCallNode(
+            executor=ToolExecutor([weather_tool()]),
+            next_action="chat",
+            retain_event_payloads=False,
+        )
         payload = {
             "assistant_message": {
                 "tool_calls": [

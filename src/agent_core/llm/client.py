@@ -68,7 +68,7 @@ class LLM:
             raise RuntimeError(
                 "Pass api_key= or set LLM_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY."
             )
-        client_kwargs = {"api_key": api_key}
+        client_kwargs: dict[str, Any] = {"api_key": api_key}
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
         self.client = client if client is not None else OpenAI(**client_kwargs)
@@ -162,7 +162,7 @@ def _stream_message(
             for position, item in enumerate(_get(delta, "tool_calls") or []):
                 _merge_stream_tool_call(tool_calls, item, position)
 
-    message = {"role": "assistant", "content": "".join(parts)}
+    message: dict[str, Any] = {"role": "assistant", "content": "".join(parts)}
     if reasoning_parts:
         message["reasoning_content"] = "".join(reasoning_parts)
     if tool_calls:

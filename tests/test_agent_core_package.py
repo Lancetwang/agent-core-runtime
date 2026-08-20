@@ -241,6 +241,12 @@ class AgentCorePackageTests(unittest.TestCase):
 
         self.assertEqual(agent.chat("hello"), "saw hello")
 
+    def test_chat_rejects_custom_flow_without_answer_key(self) -> None:
+        agent = Agent(Flow(CallableNode(lambda payload: {"anser": "typo"})))
+
+        with self.assertRaisesRegex(FlowError, "expected.*answer"):
+            agent.chat("hello")
+
     def test_agent_chat_streams_by_default_and_can_be_overridden(self) -> None:
         class FakeChatModel:
             def __init__(self) -> None:
@@ -322,8 +328,22 @@ class AgentCorePackageTests(unittest.TestCase):
         looping >> looping
         inner = Agent(Flow(looping), max_steps=100)
 
-        with self.assertRaisesRegex(FlowError, "max_steps=4"):
+        with self.assertRaisesRegex(FlowError, "shared max_steps=5"):
             Flow(inner).run({}, max_steps=5)
+
+    def test_nested_agent_steps_are_debited_from_outer_budget(self) -> None:
+        first = CallableNode(lambda payload: payload)
+        second = CallableNode(lambda payload: payload)
+        first >> second
+        inner = Agent(Flow(first), max_steps=100)
+        tail = CallableNode(lambda payload: {**payload, "tail": True})
+        inner >> tail
+
+        with self.assertRaisesRegex(FlowError, "shared max_steps=3"):
+            Flow(inner).run({}, max_steps=3)
+
+        result = Flow(inner).run({}, max_steps=4)
+        self.assertTrue(result.payload["tail"])
 
     def test_nested_agent_that_fits_budget_completes(self) -> None:
         inner = Agent(Flow(CallableNode(lambda payload: payload)), max_steps=100)

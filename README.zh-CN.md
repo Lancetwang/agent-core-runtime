@@ -251,6 +251,8 @@ if context:
 
 ```powershell
 uv run ruff check src tests examples
-uv run python -m unittest discover -s tests
+uv run pyright
+uv run coverage run -m unittest discover -s tests
+uv run coverage report
 uv run python -m compileall src tests examples
 ```

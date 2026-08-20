@@ -101,9 +101,7 @@ def tool(
                     f"tool '{fn.__name__}' parameter '{param_name}' must have a type annotation."
                 )
 
-            schema, param_description = _annotation_to_schema(annotation)
-            if param_description:
-                schema["description"] = param_description
+            schema = _schema_with_description(annotation)
             if parameter.default is inspect.Parameter.empty:
                 required.append(param_name)
             else:
@@ -139,6 +137,14 @@ def _annotation_to_schema(annotation: Any) -> tuple[dict[str, Any], str | None]:
     return _type_to_schema(annotation), description
 
 
+def _schema_with_description(annotation: Any) -> dict[str, Any]:
+    """Build one schema and attach any description carried by Annotated."""
+    schema, description = _annotation_to_schema(annotation)
+    if description:
+        schema["description"] = description
+    return schema
+
+
 def _type_to_schema(annotation: Any) -> dict[str, Any]:
     origin = get_origin(annotation)
     args = get_args(annotation)
@@ -147,10 +153,7 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
         hints = get_type_hints(annotation, include_extras=True)
         properties: dict[str, Any] = {}
         for name, hint in hints.items():
-            schema, description = _annotation_to_schema(hint)
-            if description:
-                schema["description"] = description
-            properties[name] = schema
+            properties[name] = _schema_with_description(hint)
         result: dict[str, Any] = {"type": "object", "properties": properties}
         required = [name for name in hints if name in annotation.__required_keys__]
         if required:
@@ -166,16 +169,13 @@ def _type_to_schema(annotation: Any) -> dict[str, Any]:
 
     if origin in {list, tuple}:
         item_type = args[0] if args else Any
-        item_schema, item_description = _annotation_to_schema(item_type)
-        if item_description:
-            item_schema["description"] = item_description
-        return {"type": "array", "items": item_schema}
+        return {"type": "array", "items": _schema_with_description(item_type)}
 
     if origin is dict:
         return {"type": "object"}
 
     if origin in {Union, UnionType}:
-        schemas = [_type_to_schema(arg) for arg in args if arg is not type(None)]
+        schemas = [_schema_with_description(arg) for arg in args if arg is not type(None)]
         if len(schemas) == 1:
             return schemas[0]
         return {"anyOf": schemas}

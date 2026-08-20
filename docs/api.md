@@ -33,18 +33,20 @@ options: `max_retries`, `wait` (retry `exec` on exception).
 - Wiring the same action twice raises `ValueError`.
 - The right side of `>>` must be a `Node`, otherwise `TypeError`.
 
-### `CallableNode(fn)`
+### `CallableNode(fn, *, route_plain_tuples=True)`
 
 Adapts a plain function into a node. If `fn(payload)` returns
-`ExecResult(action, payload)` it is used as-is; any other value — including
-a plain `(str, value)` tuple — becomes `("default", value)`.
+`ExecResult(action, payload)` it is used as-is. The 0.1.x-compatible default
+also routes a plain `(str, value)` tuple. New routing functions should return
+`ExecResult`; pass `route_plain_tuples=False` when tuple-shaped values are
+business payloads and must become `("default", value)`. Legacy tuple routing
+emits `DeprecationWarning` and is intended to be removed in the next breaking
+release.
 
 ### `ExecResult`
 
 Explicit `(action, payload)` routing result. It is a `tuple` subclass, so
-`action, payload = result` keeps working, but only `ExecResult` instances
-returned from a `CallableNode` function are treated as routing; ordinary
-tuples stay business payload.
+`action, payload = result` keeps working while routing intent is unambiguous.
 
 ### `Flow(start)`
 
@@ -55,8 +57,8 @@ result = Flow(start_node).run(payload, max_steps=100, trace=None, context=None, 
 ```
 
 Raises `FlowError` when the flow has no start node or exceeds `max_steps`.
-Nested flows share one step budget: an inner flow may not burn more steps
-than the enclosing run has left.
+Nested flows share one counter: every visited inner node is debited from the
+enclosing run's `max_steps` budget (in addition to each flow's local cap).
 
 `cancel` accepts a `threading.Event` checked cooperatively between steps
 (and between tool calls in `ToolExecutor.execute_all`); when set, the run
@@ -69,8 +71,11 @@ interrupted.
 
 Canonical payload state keys used by the built-in nodes: `INPUT`, `ANSWER`,
 `ASSISTANT_MESSAGE`, `HISTORY`, `CHAT_KWARGS`, `TOOL_RESULTS`. Custom flows
-should use these names instead of literal strings when touching the built-in
-contract, so a typo cannot silently produce an empty answer.
+can use these names instead of repeating literal strings when touching the
+built-in contract. They centralize names but do not validate arbitrary custom
+payload mappings. `Agent.chat` does validate that its final payload contains
+`ANSWER` and raises `FlowError` with a migration hint instead of silently
+returning an empty string; use `Agent.run` for other result shapes.
 
 ### `FlowRunResult`
 
@@ -97,11 +102,15 @@ Key methods:
   subscribers; `observe(...)` sends non-retained detail to `on_observation`,
   while `notify(...)` sends transient UI progress to `on_event` only.
 
-Retention policy: retained events (`emit`) carry small metadata, so the
-event stream stays bounded over long sessions. Large or sensitive payloads
-travel through `observe` (never retained), and transient per-chunk streams
-such as model deltas travel through `notify` (live only). Trace collection
-captures live events of the run regardless of retention.
+Retention policy: transient per-chunk streams such as model deltas travel
+through `notify` (live only). The built-in Agent loop retains metadata-only
+tool events and sends full tool payloads through `observe`; a directly
+constructed `ToolCallNode` keeps the 0.1.x full-event behavior unless
+`retain_event_payloads=False` is passed. Trace collection captures live
+events of the run regardless of retention. Tool arguments/results still live
+in canonical conversation messages when required for model continuity; this
+policy avoids duplicating them in `tool.call` / `tool.result` events rather
+than promising end-to-end secret redaction.
 - `set_artifact(name, value)`, `record_model_usage(usage)`, `to_dict()`.
 
 Inside a node, `get_current_context()` returns the active run's context (or
@@ -133,13 +142,13 @@ Agent(Flow(...), instructions=...)                # custom loop
 ```
 
 - `chat(text, *, content=None, context=None, max_steps=None, trace=None,
-  stream=None, on_delta=None, payload=None) -> str` — one user turn; reuse
+  stream=None, on_delta=None, payload=None, cancel=None) -> str` — one user turn; reuse
   `context` to hold a conversation. Pass OpenAI-style multimodal `content`
   while keeping `text` as the flow's business input.
-- `run(payload, *, max_steps=None, trace, context) -> FlowRunResult` — run the
+- `run(payload, *, max_steps=None, trace, context, cancel=None) -> FlowRunResult` — run the
   inner flow on a payload. `max_steps` defaults to the constructor budget.
-  Nested flows share one step budget: an `Agent` running inside an outer
-  flow may not burn more steps than the outer run has left.
+  An `Agent` running inside an outer flow shares its counter: each inner node
+  visit consumes one of the outer run's remaining steps.
 - `new_context() -> RunContext` — fresh context carrying this agent's
   message scope and instructions.
 - As a node, an agent exposes its inner flow's final action; pass
@@ -177,7 +186,9 @@ Calls the model once and stores the assistant message in
 `state[assistant_key]`. Messages come from an explicit builder, the active
 context's scope, or `state[messages_key]` — in that order. The context scope
 is the single canonical history during a flow run; `state[messages_key]` is
-only an import seed for custom flows and no longer mirrors new messages.
+only an import seed for custom flows and no longer mirrors new messages. A
+custom builder receives the canonical scope projected under `messages_key`,
+so later tool-loop calls still include assistant and tool messages.
 Per-call overrides travel in `state[chat_kwargs_key]`. Emits
 `model.request` / `model.response` and records usage.
 
@@ -225,7 +236,10 @@ to tools that need to correlate transient progress with a UI entry.
 Runs pending tool calls inside a flow: executes them, stores results under
 `state[results_key]`, appends `role: tool` messages to the active context
 scope (or to `state[messages_key]` when no context is active), and emits
-`tool.call` / `tool.result` events.
+`tool.call` / `tool.result` events. `retain_event_payloads=True` preserves the
+0.1.x full event data; set it to `False` for metadata-only retained events and
+observe-only `tool.call.payload` / `tool.result.payload` details. The built-in
+Agent loop uses `False`.
 
 ### `ToolCall` / `ToolResult`
 
@@ -253,7 +267,7 @@ Pass `trace=True` for defaults, or build options with categories from
 | `model.delta` / `model.reasoning.delta` | `model` | streaming callback (live only, not retained) |
 | `model.request.payload` / `model.response.payload` | `model` | `ModelNode` (observe-only) |
 | `tool.observe` | `tool` | `ToolRouterNode` |
-| `tool.call` / `tool.result` | `tool` | `ToolCallNode` (metadata only) |
-| `tool.call.payload` / `tool.result.payload` | `tool` | `ToolCallNode` (observe-only) |
+| `tool.call` / `tool.result` | `tool` | `ToolCallNode` (full data by compatibility default; metadata-only in the built-in Agent loop) |
+| `tool.call.payload` / `tool.result.payload` | `tool` | `ToolCallNode(retain_event_payloads=False)` (observe-only) |
 | `message.add` | `message` | `RunContext.add_message` |
 | `artifact.set` | `artifact` | `RunContext.set_artifact` |

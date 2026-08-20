@@ -3,12 +3,13 @@ from __future__ import annotations
 import threading
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from agent_core.core import (
     Action,
     ExecResult,
     Flow,
+    FlowError,
     FlowRunResult,
     Node,
     PayloadKeys,
@@ -83,7 +84,9 @@ class Agent(Node):
     def new_context(self) -> RunContext:
         """Create a fresh context with this agent's message scope and instructions."""
         context = RunContext(active_message_scope=self._message_scope)
-        return self._prepare_context(context)
+        prepared = self._prepare_context(context)
+        assert prepared is not None
+        return prepared
 
     def chat(
         self,
@@ -128,7 +131,13 @@ class Agent(Node):
             context=run_context,
             cancel=cancel,
         )
-        return str(result.payload.get(PayloadKeys.ANSWER, ""))
+        if not isinstance(result.payload, Mapping) or PayloadKeys.ANSWER not in result.payload:
+            raise FlowError(
+                f"Agent.chat expected the flow payload to contain "
+                f"{PayloadKeys.ANSWER!r}. Custom chat flows must set that key; "
+                "use Agent.run() when the result has a different shape."
+            )
+        return str(result.payload[PayloadKeys.ANSWER])
 
     def run(
         self,
@@ -141,9 +150,10 @@ class Agent(Node):
     ) -> FlowRunResult:
         """Run the inner flow on a payload and return the full :class:`FlowRunResult`.
 
-        ``max_steps`` defaults to the agent's constructor budget; inside an
-        outer flow the remaining outer budget also applies. ``cancel`` accepts
-        a ``threading.Event`` checked cooperatively between steps.
+        ``max_steps`` defaults to the agent's constructor budget. Inside an
+        outer flow, every inner node visit is debited from the shared outer
+        budget. ``cancel`` accepts a ``threading.Event`` checked cooperatively
+        between steps.
         """
         if max_steps is None:
             max_steps = self.max_steps
@@ -173,8 +183,12 @@ class Agent(Node):
                 trace=None,
                 context=context,
             )
-        action = (result.action or "default") if self.action is _INHERIT_ACTION else self.action
-        return action, result.payload
+        action = (
+            result.action or "default"
+            if self.action is _INHERIT_ACTION
+            else cast(Action, self.action)
+        )
+        return ExecResult(action, result.payload)
 
     def _adopt_global_messages(self, context: RunContext) -> None:
         """Merge unscoped ambient messages into this agent's scope once each.
